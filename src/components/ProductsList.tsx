@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ShoppingBag, Plus, Trash2, Edit2, X } from 'lucide-react';
+import { ShoppingBag, Plus, Trash2, Pencil, X } from 'lucide-react';
 
 interface Product {
   id: number;
@@ -172,17 +172,17 @@ export default function ProductsPage({ products: initialProducts }: { products: 
               <div className="p-3 bg-blue-100 rounded-lg text-blue-600">
                 <ShoppingBag className="w-6 h-6" />
               </div>
-              <div className="flex space-x-2">
+              <div className="flex space-x-3">
                 <button 
                   onClick={() => startEdit(product)}
-                  className="text-gray-400 hover:text-blue-600 p-1 transition-colors"
+                  className="text-blue-500 hover:text-blue-700 p-1 transition-colors"
                   title="Edit Product"
                 >
-                  <Edit2 className="w-5 h-5" />
+                  <Pencil className="w-5 h-5" />
                 </button>
                 <button 
                   onClick={() => deleteProduct(product.id)}
-                  className="text-gray-400 hover:text-red-600 p-1 transition-colors"
+                  className="text-red-500 hover:text-red-700 p-1 transition-colors"
                   title="Delete Product"
                 >
                   <Trash2 className="w-5 h-5" />
