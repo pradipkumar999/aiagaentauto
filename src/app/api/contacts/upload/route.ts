@@ -3,6 +3,7 @@ import { parse } from 'csv-parse/sync';
 import { supabase } from '@/lib/db';
 
 export async function POST(req: Request) {
+  if (!supabase) return NextResponse.json({ error: 'Supabase not initialized' }, { status: 500 });
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File;

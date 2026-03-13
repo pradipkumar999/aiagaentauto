@@ -17,6 +17,7 @@ interface SMTPConfig {
 }
 
 export async function syncReplies() {
+  if (!supabase) throw new Error('Supabase not initialized');
   const { data: activeSmtps, error: smtpsError } = await supabase
     .from('smtps')
     .select('*')
@@ -134,20 +135,8 @@ export async function syncReplies() {
   return totalFetched;
 }
 
-interface EmailWithProduct {
-  id: number;
-  contact_id: number;
-  campaign_id: number;
-  smtp_id: number;
-  subject: string;
-  content: string;
-  contact_name: string;
-  contact_email: string;
-  product_name: string;
-  product_link: string;
-}
-
 export async function processFollowUps() {
+  if (!supabase) throw new Error('Supabase not initialized');
   const origin = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
   
   // Find emails sent more than 3 days ago, not opened, and no follow-up sent yet
@@ -172,17 +161,27 @@ export async function processFollowUps() {
   if (error) throw error;
 
   let count = 0;
-  for (const email of (pendingFollowUps || [])) {
+  for (const email of (pendingFollowUps || []) as (Record<string, unknown> & {
+    id: number;
+    contact_id: number;
+    smtp_id: number;
+    campaign_id: number;
+    subject: string;
+    contact?: { name: string; email: string } | null;
+    campaign?: { product?: { name: string; link: string } | null } | null;
+  })[]) {
     try {
-      const contact_name = (email.contact as any)?.name;
-      const contact_email = (email.contact as any)?.email;
-      const product_name = (email.campaign as any)?.product?.name;
-      const product_link = (email.campaign as any)?.product?.link;
+      const contact_name = email.contact?.name;
+      const contact_email = email.contact?.email;
+      const product_name = email.campaign?.product?.name;
+      const product_link = email.campaign?.product?.link;
+
+      if (!contact_email || !product_link) continue;
 
       const followUpData = await generateFollowUpEmail(
-        contact_name, 
+        contact_name || contact_email.split('@')[0], 
         email.subject, 
-        product_name, 
+        product_name || 'the product', 
         product_link
       );
 

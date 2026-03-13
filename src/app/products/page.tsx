@@ -13,6 +13,7 @@ interface Product {
 }
 
 export default async function ProductsPage() {
+  if (!supabase) throw new Error('Supabase not initialized');
   const { data: products, error } = await supabase
     .from('affiliate_products')
     .select('*');

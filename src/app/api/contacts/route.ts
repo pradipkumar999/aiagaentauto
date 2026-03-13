@@ -4,6 +4,7 @@ import { supabase } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
+  if (!supabase) return NextResponse.json({ error: 'Supabase not initialized' }, { status: 500 });
   try {
     const { data, error } = await supabase
       .from('contacts')
@@ -25,6 +26,7 @@ interface ContactInput {
 }
 
 export async function POST(req: Request) {
+  if (!supabase) return NextResponse.json({ error: 'Supabase not initialized' }, { status: 500 });
   try {
     const data = await req.json();
     const contacts: ContactInput[] = Array.isArray(data) ? data : [data];
@@ -54,6 +56,7 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  if (!supabase) return NextResponse.json({ error: 'Supabase not initialized' }, { status: 500 });
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');

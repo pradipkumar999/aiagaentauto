@@ -4,10 +4,13 @@ import { generateEmail } from '@/lib/gemini';
 import { sendEmail } from '@/lib/mailer';
 
 export async function POST(req: Request) {
+  if (!supabase) {
+    return NextResponse.json({ error: 'Database connection error' }, { status: 500 });
+  }
   let campaignId: number | null = null;
   
   const addLog = async (msg: string, type: string = 'info') => {
-    if (campaignId) {
+    if (campaignId && supabase) {
       await supabase.from('campaign_logs').insert({ campaign_id: campaignId, msg, type });
     }
     console.log(`[CAMPAIGN LOG] [${type.toUpperCase()}] ${msg}`);
@@ -203,6 +206,9 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  if (!supabase) {
+    return NextResponse.json({ error: 'Database connection error' }, { status: 500 });
+  }
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
@@ -236,6 +242,9 @@ export async function DELETE(req: Request) {
 }
 
 export async function GET() {
+  if (!supabase) {
+    return NextResponse.json({ error: 'Database connection error' }, { status: 500 });
+  }
   try {
     const { data: campaigns, error } = await supabase
       .from('campaigns')
@@ -248,12 +257,15 @@ export async function GET() {
 
     if (error) throw error;
 
-    const formattedCampaigns = campaigns.map((c: any) => ({
+    const formattedCampaigns = campaigns.map((c: {
+      product?: { name: string } | null;
+      emails?: { opened: number; clicked: number }[] | null;
+    } & Record<string, unknown>) => ({
       ...c,
       product_name: c.product?.name,
       sent_count: c.emails?.length || 0,
-      opened_count: c.emails?.reduce((sum: number, e: any) => sum + (e.opened || 0), 0),
-      clicked_count: c.emails?.reduce((sum: number, e: any) => sum + (e.clicked || 0), 0)
+      opened_count: c.emails?.reduce((sum: number, e: { opened: number }) => sum + (e.opened || 0), 0),
+      clicked_count: c.emails?.reduce((sum: number, e: { clicked: number }) => sum + (e.clicked || 0), 0)
     }));
 
     return NextResponse.json(formattedCampaigns);

@@ -2,6 +2,16 @@ import { supabase } from "@/lib/db";
 import { Users, Mail, MousePointer2 } from "lucide-react";
 
 async function getStats() {
+  if (!supabase) {
+    return {
+      totalLeads: 0,
+      emailsSent: 0,
+      replies: 0,
+      opens: 0,
+      clicks: 0,
+      conversion: 0
+    };
+  }
   const { count: totalContacts, error: err1 } = await supabase
     .from('contacts')
     .select('*', { count: 'exact', head: true });

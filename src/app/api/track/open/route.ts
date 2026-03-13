@@ -2,13 +2,13 @@ import { NextResponse } from 'next/server';
 import supabase from '@/lib/db';
 
 export async function GET(req: Request) {
+  if (!supabase) return NextResponse.json({ error: 'Supabase not initialized' }, { status: 500 });
+
   const { searchParams } = new URL(req.url);
   const trackingId = searchParams.get('id');
 
   if (trackingId) {
     try {
-      // In Postgres/Supabase, we can use RPC or fetch-then-update for increments
-      // Fetch current count
       const { data } = await supabase
         .from('emails')
         .select('opened')
@@ -26,7 +26,6 @@ export async function GET(req: Request) {
     }
   }
 
-  // Return a 1x1 transparent GIF
   const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
   return new NextResponse(pixel, {
     headers: {

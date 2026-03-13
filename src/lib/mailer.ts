@@ -22,6 +22,7 @@ interface SMTPConfig {
 }
 
 export async function sendEmail({ to, subject, text, html, smtpId }: MailOptions) {
+  if (!supabase) throw new Error('Supabase not initialized');
   // Get SMTP configuration
   let smtp: SMTPConfig | undefined;
   

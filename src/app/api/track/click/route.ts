@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import supabase from '@/lib/db';
 
 export async function GET(req: Request) {
+  if (!supabase) return NextResponse.json({ error: 'Supabase not initialized' }, { status: 500 });
   const { searchParams } = new URL(req.url);
   const trackingId = searchParams.get('id');
   const targetUrl = searchParams.get('url');

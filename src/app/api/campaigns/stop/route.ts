@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import supabase from '@/lib/db';
 
 export async function POST() {
+  if (!supabase) {
+    return NextResponse.json({ error: 'Database connection error' }, { status: 500 });
+  }
   try {
     const { error } = await supabase
       .from('settings')

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import supabase from '@/lib/db';
 
 export async function GET() {
+  if (!supabase) return NextResponse.json({ error: 'Supabase not initialized' }, { status: 500 });
   try {
     const { data: smtps, error } = await supabase
       .from('smtps')
@@ -16,6 +17,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  if (!supabase) return NextResponse.json({ error: 'Supabase not initialized' }, { status: 500 });
   try {
     const { host, port, user, pass, from_name, from_email, secure } = await req.json();
     
@@ -44,6 +46,7 @@ export async function POST(req: Request) {
 }
 
 export async function PUT(req: Request) {
+  if (!supabase) return NextResponse.json({ error: 'Supabase not initialized' }, { status: 500 });
   try {
     const { id, host, port, user, pass, from_name, from_email, secure } = await req.json();
     
@@ -51,7 +54,15 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const updateData: any = {
+    const updateData: {
+      host: string;
+      port: number;
+      user: string;
+      from_name: string;
+      from_email: string;
+      secure: number;
+      pass?: string;
+    } = {
       host,
       port,
       user,
@@ -78,6 +89,7 @@ export async function PUT(req: Request) {
 }
 
 export async function PATCH(req: Request) {
+  if (!supabase) return NextResponse.json({ error: 'Supabase not initialized' }, { status: 500 });
   try {
     const { id, is_active } = await req.json();
     if (!id) return NextResponse.json({ error: 'ID is required' }, { status: 400 });
@@ -96,6 +108,7 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  if (!supabase) return NextResponse.json({ error: 'Supabase not initialized' }, { status: 500 });
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');

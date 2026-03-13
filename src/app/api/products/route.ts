@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/db';
 
 export async function GET() {
+  if (!supabase) return NextResponse.json({ error: 'Supabase not initialized' }, { status: 500 });
   try {
     const { data, error } = await supabase
       .from('affiliate_products')
@@ -15,6 +16,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  if (!supabase) return NextResponse.json({ error: 'Supabase not initialized' }, { status: 500 });
   try {
     const { name, description, link, audience, commission } = await req.json();
     const { error } = await supabase
@@ -29,6 +31,7 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  if (!supabase) return NextResponse.json({ error: 'Supabase not initialized' }, { status: 500 });
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');

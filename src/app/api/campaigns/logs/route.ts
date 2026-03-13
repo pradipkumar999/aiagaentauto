@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import supabase from '@/lib/db';
 
 export async function GET(req: Request) {
+  if (!supabase) {
+    return NextResponse.json({ error: 'Database connection error' }, { status: 500 });
+  }
   try {
     const { searchParams } = new URL(req.url);
     const campaignId = searchParams.get('id');

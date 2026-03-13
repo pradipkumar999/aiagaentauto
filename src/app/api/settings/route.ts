@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import supabase from '@/lib/db';
 
 export async function GET() {
+  if (!supabase) return NextResponse.json({ error: 'Supabase not initialized' }, { status: 500 });
   try {
     const { data: settings, error } = await supabase
       .from('settings')
@@ -18,6 +19,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  if (!supabase) return NextResponse.json({ error: 'Supabase not initialized' }, { status: 500 });
   try {
     const data = await req.json();
     const { error } = await supabase
