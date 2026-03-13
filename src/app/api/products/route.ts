@@ -30,6 +30,24 @@ export async function POST(req: Request) {
   }
 }
 
+export async function PUT(req: Request) {
+  if (!supabase) return NextResponse.json({ error: 'Supabase not initialized' }, { status: 500 });
+  try {
+    const { id, name, description, link, audience, commission } = await req.json();
+    if (!id) return NextResponse.json({ error: 'ID is required' }, { status: 400 });
+
+    const { error } = await supabase
+      .from('affiliate_products')
+      .update({ name, description, link, audience, commission })
+      .eq('id', id);
+    
+    if (error) throw error;
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  }
+}
+
 export async function DELETE(req: Request) {
   if (!supabase) return NextResponse.json({ error: 'Supabase not initialized' }, { status: 500 });
   try {

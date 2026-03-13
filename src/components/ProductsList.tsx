@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ShoppingBag, Plus, Trash2 } from 'lucide-react';
+import { ShoppingBag, Plus, Trash2, Edit2, X } from 'lucide-react';
 
 interface Product {
   id: number;
@@ -17,6 +17,7 @@ export default function ProductsPage({ products: initialProducts }: { products: 
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>(initialProducts);
   const [isAdding, setIsAdding] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -28,14 +29,19 @@ export default function ProductsPage({ products: initialProducts }: { products: 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     try {
-      const response = await fetch('/api/products', {
-        method: 'POST',
-        body: JSON.stringify(formData),
+      const url = '/api/products';
+      const method = editingId ? 'PUT' : 'POST';
+      const body = editingId ? { ...formData, id: editingId } : formData;
+
+      const response = await fetch(url, {
+        method: method,
+        body: JSON.stringify(body),
         headers: { 'Content-Type': 'application/json' }
       });
       
       if (response.ok) {
         setIsAdding(false);
+        setEditingId(null);
         setFormData({ name: '', description: '', link: '', audience: '', commission: '' });
         
         // Refresh local list
@@ -48,12 +54,31 @@ export default function ProductsPage({ products: initialProducts }: { products: 
         router.refresh();
       } else {
         const errorData = await response.json();
-        alert('Error: ' + (errorData.error || 'Failed to add product'));
+        alert('Error: ' + (errorData.error || 'Failed to save product'));
       }
     } catch (err) {
-      alert('Failed to add product. Check console.');
+      alert('Failed to save product. Check console.');
       console.error(err);
     }
+  }
+
+  function startEdit(product: Product) {
+    setEditingId(product.id);
+    setIsAdding(true);
+    setFormData({
+      name: product.name,
+      description: product.description,
+      link: product.link,
+      audience: product.audience,
+      commission: product.commission
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function cancelEdit() {
+    setIsAdding(false);
+    setEditingId(null);
+    setFormData({ name: '', description: '', link: '', audience: '', commission: '' });
   }
 
   async function deleteProduct(id: number) {
@@ -74,16 +99,16 @@ export default function ProductsPage({ products: initialProducts }: { products: 
           <p className="text-gray-600">Manage your affiliate products and links.</p>
         </div>
         <button 
-          onClick={() => setIsAdding(!isAdding)}
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+          onClick={() => isAdding ? cancelEdit() : setIsAdding(true)}
+          className={`flex items-center px-4 py-2 rounded-lg transition text-white ${isAdding ? 'bg-gray-500 hover:bg-gray-600' : 'bg-blue-600 hover:bg-blue-700'}`}
         >
-          {isAdding ? 'Cancel' : <><Plus className="w-4 h-4 mr-2" /> Add Product</>}
+          {isAdding ? <><X className="w-4 h-4 mr-2" /> Cancel</> : <><Plus className="w-4 h-4 mr-2" /> Add Product</>}
         </button>
       </div>
 
       {isAdding && (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-8 max-w-2xl">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Add New Product</h3>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-8 max-w-2xl animate-in slide-in-from-top duration-300">
+          <h3 className="text-lg font-bold text-gray-800 mb-4">{editingId ? 'Edit Product' : 'Add New Product'}</h3>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Product Name</label>
@@ -133,8 +158,8 @@ export default function ProductsPage({ products: initialProducts }: { products: 
                 onChange={e => setFormData({ ...formData, commission: e.target.value })}
               />
             </div>
-            <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition">
-              Save Product
+            <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition font-bold">
+              {editingId ? 'Update Product' : 'Save Product'}
             </button>
           </form>
         </div>
@@ -142,20 +167,30 @@ export default function ProductsPage({ products: initialProducts }: { products: 
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {products.map((product) => (
-          <div key={product.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col">
+          <div key={product.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col group hover:shadow-md transition-shadow">
             <div className="flex justify-between items-start mb-4">
               <div className="p-3 bg-blue-100 rounded-lg text-blue-600">
                 <ShoppingBag className="w-6 h-6" />
               </div>
-              <button 
-                onClick={() => deleteProduct(product.id)}
-                className="text-red-500 hover:text-red-700 p-1"
-              >
-                <Trash2 className="w-5 h-5" />
-              </button>
+              <div className="flex space-x-2">
+                <button 
+                  onClick={() => startEdit(product)}
+                  className="text-gray-400 hover:text-blue-600 p-1 transition-colors"
+                  title="Edit Product"
+                >
+                  <Edit2 className="w-5 h-5" />
+                </button>
+                <button 
+                  onClick={() => deleteProduct(product.id)}
+                  className="text-gray-400 hover:text-red-600 p-1 transition-colors"
+                  title="Delete Product"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              </div>
             </div>
             <h3 className="text-lg font-bold text-gray-900 mb-2">{product.name}</h3>
-            <p className="text-sm text-gray-500 mb-4 line-clamp-2">{product.description}</p>
+            <p className="text-sm text-gray-500 mb-4 line-clamp-2 h-10">{product.description}</p>
             <div className="mt-auto space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">Audience:</span>
