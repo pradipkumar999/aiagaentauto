@@ -218,10 +218,6 @@ export async function DELETE(req: Request) {
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'ID is required' }, { status: 400 });
 
-    // In Supabase we don't have easy client-side transactions. 
-    // We'll run them sequentially.
-    
-    // 1. Get email IDs for this campaign to delete replies
     const { data: emails } = await supabase.from('emails').select('id').eq('campaign_id', id);
     const emailIds = emails?.map(e => e.id) || [];
 
@@ -229,13 +225,9 @@ export async function DELETE(req: Request) {
       await supabase.from('replies').delete().in('email_id', emailIds);
     }
 
-    // 2. Delete emails
     await supabase.from('emails').delete().eq('campaign_id', id);
-
-    // 3. Delete logs
     await supabase.from('campaign_logs').delete().eq('campaign_id', id);
 
-    // 4. Delete campaign
     const { error } = await supabase.from('campaigns').delete().eq('id', id);
     if (error) throw error;
     
@@ -250,7 +242,9 @@ export async function GET() {
     return NextResponse.json({ error: 'Database connection error' }, { status: 500 });
   }
   try {
-    const { data: campaigns, error } = await supabase
+    let campaignsData: Record<string, unknown>[] = [];
+    
+    const { data, error } = await supabase
       .from('campaigns')
       .select(`
         *,
@@ -260,11 +254,23 @@ export async function GET() {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching campaigns:', error);
-      throw error;
+      console.warn('Failed to sort by created_at, trying id:', error.message);
+      const { data: data2, error: error2 } = await supabase
+        .from('campaigns')
+        .select(`
+          *,
+          product:affiliate_products(name),
+          emails(opened, clicked)
+        `)
+        .order('id', { ascending: false });
+      
+      if (error2) throw error2;
+      campaignsData = data2 || [];
+    } else {
+      campaignsData = data || [];
     }
 
-    const formattedCampaigns = campaigns.map((c: {
+    const formattedCampaigns = campaignsData.map((c: {
       product?: { name: string } | null;
       emails?: { opened: number; clicked: number }[] | null;
     } & Record<string, unknown>) => ({
