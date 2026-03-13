@@ -1,11 +1,14 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import db from "./db";
+import supabase from "./db";
 
 export async function generateEmail(target: string, productName: string, link: string, tone: string) {
-  const settings = db.prepare('SELECT gemini_api_key, gemini_model FROM settings WHERE id = 1').get() as { 
-    gemini_api_key: string,
-    gemini_model: string 
-  };
+  if (!supabase) throw new Error("Supabase client not initialized.");
+
+  const { data: settings } = await supabase
+    .from('settings')
+    .select('gemini_api_key, gemini_model')
+    .eq('id', 1)
+    .single();
   
   if (!settings?.gemini_api_key) throw new Error("Gemini API Key not set in settings.");
 
@@ -42,10 +45,13 @@ export async function generateEmail(target: string, productName: string, link: s
 }
 
 export async function generateAutoReply(contactName: string, originalEmail: string, userReply: string) {
-  const settings = db.prepare('SELECT gemini_api_key, gemini_model FROM settings WHERE id = 1').get() as { 
-    gemini_api_key: string,
-    gemini_model: string 
-  };
+  if (!supabase) throw new Error("Supabase client not initialized.");
+
+  const { data: settings } = await supabase
+    .from('settings')
+    .select('gemini_api_key, gemini_model')
+    .eq('id', 1)
+    .single();
   
   if (!settings?.gemini_api_key) throw new Error("Gemini API Key not set in settings.");
 
@@ -72,10 +78,13 @@ export async function generateAutoReply(contactName: string, originalEmail: stri
 }
 
 export async function generateFollowUpEmail(contactName: string, originalSubject: string, productName: string, link: string) {
-  const settings = db.prepare('SELECT gemini_api_key, gemini_model FROM settings WHERE id = 1').get() as { 
-    gemini_api_key: string,
-    gemini_model: string 
-  };
+  if (!supabase) throw new Error("Supabase client not initialized.");
+
+  const { data: settings } = await supabase
+    .from('settings')
+    .select('gemini_api_key, gemini_model')
+    .eq('id', 1)
+    .single();
   
   if (!settings?.gemini_api_key) throw new Error("Gemini API Key not set.");
 
