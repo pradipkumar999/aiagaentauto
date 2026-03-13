@@ -45,7 +45,14 @@ export async function GET(req: Request) {
 
     // 4. Check SMTP Capacity for Today
     const today = new Date().toISOString().split('T')[0];
-    const smtpCapacityMap: any[] = [];
+    
+    interface SMTPWithCapacity {
+      id: number;
+      user: string;
+      remaining: number;
+    }
+    
+    const smtpCapacityMap: SMTPWithCapacity[] = [];
     
     for (const smtp of activeSmtps) {
       const { count } = await supabase
@@ -56,7 +63,11 @@ export async function GET(req: Request) {
       
       const remaining = Math.max(0, perSmtpLimit - (count || 0));
       if (remaining > 0) {
-        smtpCapacityMap.push({ ...smtp, remaining });
+        smtpCapacityMap.push({ 
+          id: smtp.id, 
+          user: smtp.user, 
+          remaining 
+        });
       }
     }
 
