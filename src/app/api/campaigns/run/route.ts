@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/db';
-import { generateEmail } from '@/lib/gemini';
-import { sendEmail } from '@/lib/mailer';
 
 export async function POST(req: Request) {
   if (!supabase) {
@@ -17,7 +15,7 @@ export async function POST(req: Request) {
   };
 
   try {
-    const { tone, product_id: rawProductId, name } = await req.json();
+    const { product_id: rawProductId, name } = await req.json();
     const productId = Number(rawProductId);
     const campaignName = name || `Campaign - ${new Date().toLocaleString()}`;
 
