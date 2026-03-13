@@ -22,13 +22,17 @@ export async function POST(req: Request) {
     const campaignName = name || `Campaign - ${new Date().toLocaleString()}`;
 
     // 1. Create campaign record
+    console.log('Creating campaign:', campaignName, 'for product:', productId);
     const { data: campaignData, error: campaignError } = await supabase
       .from('campaigns')
       .insert({ name: campaignName, product_id: productId, status: 'active' })
       .select('id')
       .single();
 
-    if (campaignError) throw campaignError;
+    if (campaignError) {
+      console.error('Campaign creation error:', campaignError);
+      throw campaignError;
+    }
     campaignId = campaignData.id;
 
     await addLog(`Campaign initialized: ${campaignName}`, 'info');
@@ -255,7 +259,10 @@ export async function GET() {
       `)
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error fetching campaigns:', error);
+      throw error;
+    }
 
     const formattedCampaigns = campaigns.map((c: {
       product?: { name: string } | null;
