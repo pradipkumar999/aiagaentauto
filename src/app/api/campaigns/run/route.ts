@@ -116,90 +116,20 @@ export async function POST(req: Request) {
       .limit(totalCapacity);
     
     if (contactsError) throw contactsError;
-    await addLog(`Found ${contacts?.length || 0} pending contacts in the database.`, 'info');
     
     if (!contacts || contacts.length === 0) {
-      await addLog("No pending contacts found to process.", 'info');
+      await addLog("No pending contacts found. Campaign finished.", 'info');
       await supabase.from('campaigns').update({ status: 'completed' }).eq('id', campaignId);
-      return NextResponse.json({ success: true, processed: 0, campaignId });
+      return NextResponse.json({ success: true, message: 'No pending contacts', campaignId });
     }
 
-    const origin = new URL(req.url).origin;
-    let processed = 0;
-    let smtpIndex = 0;
-
-    for (const contact of contacts) {
-      // Check Stop
-      const { data: curSettings } = await supabase.from('settings').select('stop_requested').eq('id', 1).single();
-      if (curSettings?.stop_requested === 1) {
-        await addLog("Campaign stopped by user request.", 'info');
-        await supabase.from('campaigns').update({ status: 'stopped' }).eq('id', campaignId);
-        break;
-      }
-
-      // Find SMTP
-      while (smtpIndex < smtpCapacityMap.length && smtpCapacityMap[smtpIndex].remaining <= 0) {
-        smtpIndex++;
-      }
-      if (smtpIndex >= smtpCapacityMap.length) {
-        await addLog("SMTP capacity fully exhausted for this run.", 'info');
-        break;
-      }
-      const currentSmtp = smtpCapacityMap[smtpIndex];
-
-      try {
-        await addLog(`Processing: generating AI content for ${contact.email}...`, 'info');
-        
-        const trackingId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-        const emailData = await generateEmail(contact.name || contact.email.split('@')[0], product.name, product.link, tone);
-        await addLog(`AI content created for ${contact.email}.`, 'info');
-
-        const trackedLink = `${origin}/api/track/click?id=${trackingId}&url=${encodeURIComponent(product.link)}`;
-        const linkRegex = new RegExp(product.link.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-        const maskedLink = `<a href="${trackedLink}">${product.link}</a>`;
-        const htmlContent = emailData.content.replace(linkRegex, maskedLink).replace(/\n/g, '<br>') + `<img src="${origin}/api/track/open?id=${trackingId}" width="1" height="1" style="display:none;" />`;
-
-        await addLog(`Sending email to ${contact.email} using ${currentSmtp.user}...`, 'info');
-        await sendEmail({
-          to: contact.email,
-          subject: emailData.subject,
-          text: emailData.content,
-          html: htmlContent,
-          smtpId: currentSmtp.id
-        });
-
-        // Log Email
-        await supabase.from('emails').insert({
-          contact_id: contact.id,
-          smtp_id: currentSmtp.id,
-          campaign_id: campaignId,
-          subject: emailData.subject,
-          content: emailData.content,
-          status: 'sent',
-          tracking_id: trackingId
-        });
-
-        // Update contact
-        await supabase.from('contacts').update({ status: 'sent' }).eq('id', contact.id);
-        
-        currentSmtp.remaining--;
-        processed++;
-        await addLog(`Successfully sent to ${contact.email}.`, 'success');
-
-        if (processed < contacts.length) {
-          await addLog("Waiting 5 seconds before next email...", 'info');
-          await new Promise(r => setTimeout(r, 5000));
-        }
-        
-      } catch (err) {
-        await addLog(`Failed to process ${contact.email}: ${(err as Error).message}`, 'error');
-        console.error(`[FAIL] ${contact.email}:`, err);
-      }
-    }
-
-    await supabase.from('campaigns').update({ status: 'completed' }).eq('id', campaignId);
-    await addLog(`Campaign finished. Total emails processed: ${processed}`, 'success');
-    return NextResponse.json({ success: true, processed, campaignId });
+    // NEW: Return early to avoid Vercel Timeout. The Cron job will pick this up.
+    // We can also trigger the first batch here, but let's keep it clean.
+    return NextResponse.json({ 
+      success: true, 
+      message: 'Campaign initialized. Emails will be sent automatically via background worker.', 
+      campaignId 
+    });
 
   } catch (error) {
     const errorMsg = (error as Error).message;
