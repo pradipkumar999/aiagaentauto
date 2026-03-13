@@ -1,0 +1,19 @@
+name: App Crons (Free)
+
+on:
+  schedule:
+    # Runs every 30 minutes for inbox sync
+    - cron: '*/30 * * * *'
+  workflow_dispatch: # Allows manual trigger
+
+jobs:
+  run-crons:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync Inbox
+        run: |
+          curl -X GET "https://YOUR_APP_URL.com/api/inbox/sync"
+      
+      - name: Campaign Cron
+        run: |
+          curl -X GET "https://YOUR_APP_URL.com/api/campaigns/cron"
