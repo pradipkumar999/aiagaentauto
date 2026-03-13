@@ -5,16 +5,19 @@ import { sendEmail } from '@/lib/mailer';
 
 export const dynamic = 'force-dynamic';
 
+const CRON_SECRET = process.env.CRON_SECRET || 'my_secure_cron_key_123';
+
 export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const key = searchParams.get('key');
+
+  if (key !== CRON_SECRET) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   if (!supabase) {
     return NextResponse.json({ error: 'Database connection error' }, { status: 500 });
   }
-
-  // Security check for Cron (optional but recommended)
-  // const authHeader = req.headers.get('authorization');
-  // if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-  //   return new Response('Unauthorized', { status: 401 });
-  // }
 
   console.log('--- STARTING CAMPAIGN CRON JOB ---');
 
@@ -42,7 +45,7 @@ export async function GET(req: Request) {
 
     // 4. Calculate Capacity
     const today = new Date().toISOString().split('T')[0];
-    const smtpCapacityMap: { id: number, user: string, remaining: number, host: string, port: number, pass: string, from_name: string, from_email: string }[] = [];
+    const smtpCapacityMap: any[] = [];
     let totalCapacity = 0;
 
     for (const smtp of activeSmtps) {
@@ -69,15 +72,17 @@ export async function GET(req: Request) {
     let totalProcessed = 0;
     const origin = new URL(req.url).origin;
 
-    for (const campaign of activeCampaigns) {
-      if (totalCapacity <= 0) break;
+    // Process only a small batch (e.g., 5-10) per cron run to stay under Vercel's 10s limit
+    const BATCH_SIZE = 5; 
 
-      // Get batch of contacts for this campaign
+    for (const campaign of activeCampaigns) {
+      if (totalProcessed >= BATCH_SIZE || totalCapacity <= 0) break;
+
       const { data: contacts } = await supabase
         .from('contacts')
         .select('*')
         .eq('status', 'pending')
-        .limit(Math.min(10, totalCapacity)); // Process in small batches per cron run
+        .limit(Math.min(BATCH_SIZE - totalProcessed, totalCapacity));
 
       if (!contacts || contacts.length === 0) {
         await supabase.from('campaigns').update({ status: 'completed' }).eq('id', campaign.id);
@@ -86,7 +91,6 @@ export async function GET(req: Request) {
 
       let smtpIndex = 0;
       for (const contact of contacts) {
-        // Find SMTP with remaining capacity
         while (smtpIndex < smtpCapacityMap.length && smtpCapacityMap[smtpIndex].remaining <= 0) {
           smtpIndex++;
         }
@@ -94,7 +98,7 @@ export async function GET(req: Request) {
         const currentSmtp = smtpCapacityMap[smtpIndex];
 
         try {
-          const trackingId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+          const trackingId = Math.random().toString(36).substring(2, 15);
           const emailData = await generateEmail(
             contact.name || contact.email.split('@')[0], 
             campaign.product?.name || 'Product', 
@@ -131,7 +135,6 @@ export async function GET(req: Request) {
           totalCapacity--;
           totalProcessed++;
 
-          // Log to campaign logs
           await supabase.from('campaign_logs').insert({
             campaign_id: campaign.id,
             msg: `Sent email to ${contact.email}`,
@@ -150,4 +153,8 @@ export async function GET(req: Request) {
     console.error('CRON FATAL ERROR:', error);
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
+}
+
+export async function POST(req: Request) {
+  return GET(req);
 }
