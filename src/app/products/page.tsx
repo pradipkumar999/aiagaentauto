@@ -2,6 +2,7 @@ import { supabase } from "@/lib/db";
 import ProductsList from "@/components/ProductsList";
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 interface Product {
   id: number;

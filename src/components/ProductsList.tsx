@@ -13,8 +13,9 @@ interface Product {
   commission: string;
 }
 
-export default function ProductsPage({ products }: { products: Product[] }) {
+export default function ProductsPage({ products: initialProducts }: { products: Product[] }) {
   const router = useRouter();
+  const [products, setProducts] = useState<Product[]>(initialProducts);
   const [isAdding, setIsAdding] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -26,23 +27,42 @@ export default function ProductsPage({ products }: { products: Product[] }) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const response = await fetch('/api/products', {
-      method: 'POST',
-      body: JSON.stringify(formData),
-      headers: { 'Content-Type': 'application/json' }
-    });
-    
-    if (response.ok) {
-      setIsAdding(false);
-      setFormData({ name: '', description: '', link: '', audience: '', commission: '' });
-      router.refresh();
+    try {
+      const response = await fetch('/api/products', {
+        method: 'POST',
+        body: JSON.stringify(formData),
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (response.ok) {
+        setIsAdding(false);
+        setFormData({ name: '', description: '', link: '', audience: '', commission: '' });
+        
+        // Refresh local list
+        const res = await fetch('/api/products');
+        const updated = await res.json();
+        if (Array.isArray(updated)) {
+          setProducts(updated);
+        }
+        
+        router.refresh();
+      } else {
+        const errorData = await response.json();
+        alert('Error: ' + (errorData.error || 'Failed to add product'));
+      }
+    } catch (err) {
+      alert('Failed to add product. Check console.');
+      console.error(err);
     }
   }
 
   async function deleteProduct(id: number) {
     if (confirm('Are you sure you want to delete this product?')) {
-      await fetch(`/api/products?id=${id}`, { method: 'DELETE' });
-      router.refresh();
+      const response = await fetch(`/api/products?id=${id}`, { method: 'DELETE' });
+      if (response.ok) {
+        setProducts(products.filter(p => p.id !== id));
+        router.refresh();
+      }
     }
   }
 
