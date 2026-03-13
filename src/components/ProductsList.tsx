@@ -1,3 +1,4 @@
+// Products list component with Supabase integration
 "use client";
 
 import { useState } from 'react';
