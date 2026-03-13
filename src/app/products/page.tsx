@@ -1,4 +1,4 @@
-import db from "@/lib/db";
+import { supabase } from "@/lib/db";
 import ProductsList from "@/components/ProductsList";
 
 export const dynamic = 'force-dynamic';
@@ -13,7 +13,13 @@ interface Product {
 }
 
 export default async function ProductsPage() {
-  const products = db.prepare("SELECT * FROM affiliate_products").all() as Product[];
+  const { data: products, error } = await supabase
+    .from('affiliate_products')
+    .select('*');
   
-  return <ProductsList products={products} />;
+  if (error) {
+    console.error('Error fetching products:', error);
+  }
+  
+  return <ProductsList products={(products as Product[]) || []} />;
 }

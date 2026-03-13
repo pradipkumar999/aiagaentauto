@@ -1,23 +1,41 @@
-import db from "@/lib/db";
+import { supabase } from "@/lib/db";
 import { Users, Mail, MousePointer2 } from "lucide-react";
 
 async function getStats() {
-  const totalContacts = db.prepare("SELECT COUNT(*) as count FROM contacts").get() as { count: number };
-  const emailsSent = db.prepare("SELECT COUNT(*) as count FROM emails WHERE status = 'sent'").get() as { count: number };
-  const repliesReceived = db.prepare("SELECT COUNT(*) as count FROM replies").get() as { count: number };
+  const { count: totalContacts, error: err1 } = await supabase
+    .from('contacts')
+    .select('*', { count: 'exact', head: true });
+    
+  const { count: emailsSent, error: err2 } = await supabase
+    .from('emails')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'sent');
+    
+  const { count: repliesReceived, error: err3 } = await supabase
+    .from('replies')
+    .select('*', { count: 'exact', head: true });
   
-  const tracking = db.prepare("SELECT SUM(opened) as opens, SUM(clicked) as clicks FROM emails").get() as { opens: number, clicks: number };
+  const { data: tracking, error: err4 } = await supabase
+    .from('emails')
+    .select('opened, clicked');
 
-  const conversion = emailsSent.count > 0 
-    ? ((repliesReceived.count / emailsSent.count) * 100).toFixed(1) 
+  if (err1 || err2 || err3 || err4) {
+    console.error('Error fetching dashboard stats:', { err1, err2, err3, err4 });
+  }
+
+  const opens = tracking?.reduce((acc, curr) => acc + (curr.opened || 0), 0) || 0;
+  const clicks = tracking?.reduce((acc, curr) => acc + (curr.clicked || 0), 0) || 0;
+
+  const conversion = (emailsSent || 0) > 0 
+    ? (((repliesReceived || 0) / (emailsSent || 0)) * 100).toFixed(1) 
     : 0;
 
   return {
-    totalLeads: totalContacts.count,
-    emailsSent: emailsSent.count,
-    replies: repliesReceived.count,
-    opens: tracking.opens || 0,
-    clicks: tracking.clicks || 0,
+    totalLeads: totalContacts || 0,
+    emailsSent: emailsSent || 0,
+    replies: repliesReceived || 0,
+    opens: opens,
+    clicks: clicks,
     conversion
   };
 }

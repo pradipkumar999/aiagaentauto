@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import db from '@/lib/db';
+import supabase from '@/lib/db';
 
 export async function GET(req: Request) {
   try {
@@ -10,11 +10,13 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'campaignId is required' }, { status: 400 });
     }
 
-    const logs = db.prepare(`
-      SELECT * FROM campaign_logs 
-      WHERE campaign_id = ? 
-      ORDER BY created_at ASC
-    `).all(campaignId);
+    const { data: logs, error } = await supabase
+      .from('campaign_logs')
+      .select('*')
+      .eq('campaign_id', campaignId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
 
     return NextResponse.json(logs);
   } catch (error) {

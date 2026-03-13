@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server';
-import db from '@/lib/db';
+import { supabase } from '@/lib/db';
 
 export async function GET() {
   try {
-    const products = db.prepare('SELECT * FROM affiliate_products').all();
-    return NextResponse.json(products);
+    const { data, error } = await supabase
+      .from('affiliate_products')
+      .select('*');
+    
+    if (error) throw error;
+    return NextResponse.json(data);
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
@@ -13,8 +17,11 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const { name, description, link, audience, commission } = await req.json();
-    const stmt = db.prepare('INSERT INTO affiliate_products (name, description, link, audience, commission) VALUES (?, ?, ?, ?, ?)');
-    stmt.run(name, description, link, audience, commission);
+    const { error } = await supabase
+      .from('affiliate_products')
+      .insert([{ name, description, link, audience, commission }]);
+    
+    if (error) throw error;
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });
@@ -27,8 +34,12 @@ export async function DELETE(req: Request) {
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'ID is required' }, { status: 400 });
 
-    const stmt = db.prepare('DELETE FROM affiliate_products WHERE id = ?');
-    stmt.run(id);
+    const { error } = await supabase
+      .from('affiliate_products')
+      .delete()
+      .eq('id', id);
+    
+    if (error) throw error;
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });

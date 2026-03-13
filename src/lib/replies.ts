@@ -1,6 +1,6 @@
 import imap from 'imap-simple';
 import { simpleParser } from 'mailparser';
-import db from './db';
+import supabase from './db';
 import { generateAutoReply, generateFollowUpEmail } from './gemini';
 import { sendEmail } from './mailer';
 
@@ -17,10 +17,15 @@ interface SMTPConfig {
 }
 
 export async function syncReplies() {
-  const activeSmtps = db.prepare('SELECT * FROM smtps WHERE is_active = 1').all() as SMTPConfig[];
+  const { data: activeSmtps, error: smtpsError } = await supabase
+    .from('smtps')
+    .select('*')
+    .eq('is_active', 1);
+
+  if (smtpsError) throw smtpsError;
   let totalFetched = 0;
 
-  for (const smtp of activeSmtps) {
+  for (const smtp of (activeSmtps as SMTPConfig[])) {
     const config = {
       imap: {
         user: smtp.user,
@@ -57,32 +62,46 @@ export async function syncReplies() {
         if (!fromEmail) continue;
 
         // Check if this is a reply from one of our contacts
-        const contact = db.prepare('SELECT id FROM contacts WHERE email = ?').get(fromEmail) as { id: number } | undefined;
+        const { data: contact, error: contactError } = await supabase
+          .from('contacts')
+          .select('id, name')
+          .eq('email', fromEmail)
+          .single();
+        
+        if (contactError && contactError.code !== 'PGRST116') throw contactError;
+
         if (contact) {
           const originalSubject = subject?.replace(/^Re:\s+/i, '').trim();
-          const originalEmail = db.prepare('SELECT id FROM emails WHERE contact_id = ? AND subject LIKE ? ORDER BY sent_at DESC LIMIT 1')
-            .get(contact.id, `%${originalSubject}%`) as { id: number } | undefined;
+          
+          const { data: originalEmail } = await supabase
+            .from('emails')
+            .select('id, content')
+            .eq('contact_id', contact.id)
+            .ilike('subject', `%${originalSubject}%`)
+            .order('sent_at', { ascending: false })
+            .limit(1)
+            .single();
 
-          const existing = db.prepare('SELECT id FROM replies WHERE contact_id = ? AND message = ? AND received_at = ?')
-            .get(contact.id, body, date?.toISOString()) as { id: number } | undefined;
+          const { data: existing } = await supabase
+            .from('replies')
+            .select('id')
+            .eq('contact_id', contact.id)
+            .eq('message', body)
+            .eq('received_at', date?.toISOString())
+            .single();
 
           if (!existing) {
-            db.prepare(`
-              INSERT INTO replies (contact_id, email_id, message, received_at)
-              VALUES (?, ?, ?, ?)
-            `).run(contact.id, originalEmail?.id || null, body, date?.toISOString());
+            await supabase.from('replies').insert({
+              contact_id: contact.id,
+              email_id: originalEmail?.id || null,
+              message: body,
+              received_at: date?.toISOString()
+            });
             totalFetched++;
 
             // AI AUTO-REPLY
             try {
-              const contactData = db.prepare('SELECT name FROM contacts WHERE id = ?').get(contact.id) as { name: string };
-              let originalContent = "";
-              if (originalEmail) {
-                const emailRecord = db.prepare('SELECT content FROM emails WHERE id = ?').get(originalEmail.id) as { content: string };
-                originalContent = emailRecord.content;
-              }
-
-              const aiReplyText = await generateAutoReply(contactData.name, originalContent, body);
+              const aiReplyText = await generateAutoReply(contact.name, originalEmail?.content || "", body);
               const replySubject = (subject && subject.startsWith('Re:')) ? subject : `Re: ${subject || 'Our outreach'}`;
               
               await sendEmail({
@@ -92,10 +111,13 @@ export async function syncReplies() {
                 smtpId: smtp.id
               });
 
-              db.prepare(`
-                INSERT INTO emails (contact_id, smtp_id, subject, content, status, sent_at)
-                VALUES (?, ?, ?, ?, 'sent', CURRENT_TIMESTAMP)
-              `).run(contact.id, smtp.id, replySubject, aiReplyText);
+              await supabase.from('emails').insert({
+                contact_id: contact.id,
+                smtp_id: smtp.id,
+                subject: replySubject,
+                content: aiReplyText,
+                status: 'sent'
+              });
             } catch (autoReplyErr) {
               console.error(`Auto-reply failed for ${fromEmail}:`, autoReplyErr);
             }
@@ -129,57 +151,74 @@ export async function processFollowUps() {
   const origin = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
   
   // Find emails sent more than 3 days ago, not opened, and no follow-up sent yet
-  const pendingFollowUps = db.prepare(`
-    SELECT e.*, c.name as contact_name, c.email as contact_email, p.name as product_name, p.link as product_link
-    FROM emails e
-    JOIN contacts c ON e.contact_id = c.id
-    JOIN campaigns cam ON e.campaign_id = cam.id
-    JOIN affiliate_products p ON cam.product_id = p.id
-    WHERE e.opened = 0 
-    AND e.follow_up_sent = 0 
-    AND e.sent_at < datetime('now', '-3 days')
-    AND e.status = 'sent'
-  `).all() as EmailWithProduct[];
+  const threeDaysAgo = new Date();
+  threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+
+  const { data: pendingFollowUps, error } = await supabase
+    .from('emails')
+    .select(`
+      *,
+      contact:contacts(name, email),
+      campaign:campaigns(
+        id,
+        product:affiliate_products(name, link)
+      )
+    `)
+    .eq('opened', 0)
+    .eq('follow_up_sent', 0)
+    .lt('sent_at', threeDaysAgo.toISOString())
+    .eq('status', 'sent');
+
+  if (error) throw error;
 
   let count = 0;
-  for (const email of pendingFollowUps) {
+  for (const email of (pendingFollowUps || [])) {
     try {
+      const contact_name = (email.contact as any)?.name;
+      const contact_email = (email.contact as any)?.email;
+      const product_name = (email.campaign as any)?.product?.name;
+      const product_link = (email.campaign as any)?.product?.link;
+
       const followUpData = await generateFollowUpEmail(
-        email.contact_name, 
+        contact_name, 
         email.subject, 
-        email.product_name, 
-        email.product_link
+        product_name, 
+        product_link
       );
 
       const trackingId = Math.random().toString(36).substring(2, 15);
-      const trackedLink = `${origin}/api/track/click?id=${trackingId}&url=${encodeURIComponent(email.product_link)}`;
-      const linkRegex = new RegExp(email.product_link.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+      const trackedLink = `${origin}/api/track/click?id=${trackingId}&url=${encodeURIComponent(product_link)}`;
+      const linkRegex = new RegExp(product_link.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
       
-      const maskedLink = `<a href="${trackedLink}">${email.product_link}</a>`;
+      const maskedLink = `<a href="${trackedLink}">${product_link}</a>`;
       const htmlContent = followUpData.content.replace(linkRegex, maskedLink).replace(/\n/g, '<br>') + `<img src="${origin}/api/track/open?id=${trackingId}" width="1" height="1" style="display:none;" />`;
 
       await sendEmail({
-        to: email.contact_email,
+        to: contact_email,
         subject: followUpData.subject,
-        text: followUpData.content, // Shows original link in plain text
-        html: htmlContent,          // Shows original link text in HTML
+        text: followUpData.content,
+        html: htmlContent,
         smtpId: email.smtp_id
       });
 
       // Log the follow-up email
-      db.prepare(`
-        INSERT INTO emails (contact_id, smtp_id, campaign_id, subject, content, status, sent_at, tracking_id)
-        VALUES (?, ?, ?, ?, ?, 'sent', CURRENT_TIMESTAMP, ?)
-      `).run(email.contact_id, email.smtp_id, email.campaign_id, followUpData.subject, followUpData.content, trackingId);
+      await supabase.from('emails').insert({
+        contact_id: email.contact_id,
+        smtp_id: email.smtp_id,
+        campaign_id: email.campaign_id,
+        subject: followUpData.subject,
+        content: followUpData.content,
+        status: 'sent',
+        tracking_id: trackingId
+      });
 
       // Mark the original email as followed up
-      db.prepare('UPDATE emails SET follow_up_sent = 1 WHERE id = ?').run(email.id);
+      await supabase.from('emails').update({ follow_up_sent: 1 }).eq('id', email.id);
       
       count++;
-      // Wait a bit to avoid rate limits
       await new Promise(r => setTimeout(r, 2000));
     } catch (err) {
-      console.error(`Follow-up failed for ${email.contact_email}:`, err);
+      console.error(`Follow-up failed for ${email.id}:`, err);
     }
   }
   return count;

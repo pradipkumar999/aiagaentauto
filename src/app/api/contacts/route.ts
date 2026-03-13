@@ -1,12 +1,18 @@
 import { NextResponse } from 'next/server';
-import db from '@/lib/db';
+import { supabase } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const contacts = db.prepare('SELECT * FROM contacts ORDER BY created_at DESC LIMIT 1000').all();
-    return NextResponse.json(contacts);
+    const { data, error } = await supabase
+      .from('contacts')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1000);
+    
+    if (error) throw error;
+    return NextResponse.json(data);
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
@@ -23,37 +29,56 @@ export async function POST(req: Request) {
     const data = await req.json();
     const contacts: ContactInput[] = Array.isArray(data) ? data : [data];
 
-    const insert = db.prepare('INSERT OR IGNORE INTO contacts (name, email, website) VALUES (?, ?, ?)');
-    
-    let successCount = 0;
-    const transaction = db.transaction((rows: ContactInput[]) => {
-      for (const row of rows) {
-        if (row.email) {
-          insert.run(row.name || row.email.split('@')[0], row.email, row.website || '');
-          successCount++;
-        }
-      }
-    });
+    const toInsert = contacts
+      .filter(c => c.email)
+      .map(c => ({
+        name: c.name || c.email.split('@')[0],
+        email: c.email,
+        website: c.website || ''
+      }));
 
-    transaction(contacts);
-    return NextResponse.json({ success: true, count: successCount });
+    if (toInsert.length === 0) {
+      return NextResponse.json({ success: true, count: 0 });
+    }
+
+    const { error } = await supabase
+      .from('contacts')
+      .upsert(toInsert, { onConflict: 'email' });
+    
+    if (error) throw error;
+    
+    return NextResponse.json({ success: true, count: toInsert.length });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }
 
 export async function DELETE(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const id = searchParams.get('id');
-  const all = searchParams.get('all');
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
+    const all = searchParams.get('all');
 
-  if (all === 'true') {
-    db.prepare('DELETE FROM contacts').run();
+    if (all === 'true') {
+      const { error } = await supabase
+        .from('contacts')
+        .delete()
+        .neq('id', -1); // Filter required for delete in Supabase/PostgREST
+      
+      if (error) throw error;
+      return NextResponse.json({ success: true });
+    }
+
+    if (!id) return NextResponse.json({ error: 'ID is required' }, { status: 400 });
+
+    const { error } = await supabase
+      .from('contacts')
+      .delete()
+      .eq('id', id);
+    
+    if (error) throw error;
     return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
-
-  if (!id) return NextResponse.json({ error: 'ID is required' }, { status: 400 });
-
-  db.prepare('DELETE FROM contacts WHERE id = ?').run(id);
-  return NextResponse.json({ success: true });
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import db from '@/lib/db';
+import supabase from '@/lib/db';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -8,7 +8,19 @@ export async function GET(req: Request) {
 
   if (trackingId) {
     try {
-      db.prepare('UPDATE emails SET clicked = clicked + 1 WHERE tracking_id = ?').run(trackingId);
+      // Fetch current count
+      const { data } = await supabase
+        .from('emails')
+        .select('clicked')
+        .eq('tracking_id', trackingId)
+        .single();
+
+      if (data) {
+        await supabase
+          .from('emails')
+          .update({ clicked: (data.clicked || 0) + 1 })
+          .eq('tracking_id', trackingId);
+      }
     } catch (err) {
       console.error('Failed to track email click:', err);
     }
@@ -19,5 +31,9 @@ export async function GET(req: Request) {
   }
 
   // Redirect to the final URL
-  return NextResponse.redirect(new URL(targetUrl));
+  try {
+    return NextResponse.redirect(new URL(targetUrl));
+  } catch {
+    return NextResponse.redirect(new URL('/', req.url));
+  }
 }

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { parse } from 'csv-parse/sync';
-import db from '@/lib/db';
+import { supabase } from '@/lib/db';
 
 export async function POST(req: Request) {
   try {
@@ -21,41 +21,47 @@ export async function POST(req: Request) {
       console.log("CSV Headers detected:", Object.keys(records[0]));
     }
 
-    const insert = db.prepare('INSERT OR IGNORE INTO contacts (name, email, website) VALUES (?, ?, ?)');
-    
-    let successCount = 0;
-    const transaction = db.transaction((rows: Record<string, string>[]) => {
-      for (const row of rows) {
-        // Find keys case-insensitively
-        const findKey = (search: string) => {
-          const key = Object.keys(row).find(k => k.toLowerCase() === search.toLowerCase());
-          return key ? row[key] : null;
-        };
+    const contactsToInsert = records.map((row) => {
+      // Find keys case-insensitively
+      const findKey = (search: string) => {
+        const key = Object.keys(row).find(k => k.toLowerCase() === search.toLowerCase());
+        return key ? row[key] : null;
+      };
 
-        let email = findKey('email');
-        const name = findKey('name');
-        const website = findKey('website') || '';
+      let email = findKey('email');
+      const name = findKey('name');
+      const website = findKey('website') || '';
 
-        // Fallback: If no 'email' column found, check all columns for an @ symbol
-        if (!email) {
-          for (const val of Object.values(row)) {
-            if (typeof val === 'string' && val.includes('@') && val.includes('.')) {
-              email = val;
-              break;
-            }
+      // Fallback: If no 'email' column found, check all columns for an @ symbol
+      if (!email) {
+        for (const val of Object.values(row)) {
+          if (typeof val === 'string' && val.includes('@') && val.includes('.')) {
+            email = val;
+            break;
           }
         }
-
-        if (email) {
-          insert.run(name || email.split('@')[0], email, website);
-          successCount++;
-        }
       }
-    });
 
-    transaction(records);
-    console.log(`Successfully inserted ${successCount} contacts.`);
-    return NextResponse.json({ success: true, count: successCount });
+      if (email) {
+        return {
+          name: name || email.split('@')[0],
+          email,
+          website
+        };
+      }
+      return null;
+    }).filter(Boolean) as { name: string, email: string, website: string }[];
+
+    if (contactsToInsert.length > 0) {
+      const { error } = await supabase
+        .from('contacts')
+        .upsert(contactsToInsert, { onConflict: 'email' });
+      
+      if (error) throw error;
+    }
+
+    console.log(`Successfully processed ${contactsToInsert.length} contacts.`);
+    return NextResponse.json({ success: true, count: contactsToInsert.length });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });

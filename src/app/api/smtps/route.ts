@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server';
-import db from '@/lib/db';
+import supabase from '@/lib/db';
 
 export async function GET() {
   try {
-    const smtps = db.prepare('SELECT * FROM smtps ORDER BY created_at DESC').all();
+    const { data: smtps, error } = await supabase
+      .from('smtps')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
     return NextResponse.json(smtps);
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });
@@ -18,12 +23,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const stmt = db.prepare(`
-      INSERT INTO smtps (host, port, user, pass, from_name, from_email, secure)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-    
-    stmt.run(host, port, user, pass, from_name || '', from_email, secure ? 1 : 0);
+    const { error } = await supabase
+      .from('smtps')
+      .insert({
+        host,
+        port,
+        user,
+        pass,
+        from_name: from_name || '',
+        from_email,
+        secure: secure ? 1 : 0
+      });
+
+    if (error) throw error;
     
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -39,21 +51,25 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    const updateData: any = {
+      host,
+      port,
+      user,
+      from_name: from_name || '',
+      from_email,
+      secure: secure ? 1 : 0
+    };
+
     if (pass) {
-      const stmt = db.prepare(`
-        UPDATE smtps 
-        SET host = ?, port = ?, user = ?, pass = ?, from_name = ?, from_email = ?, secure = ?
-        WHERE id = ?
-      `);
-      stmt.run(host, port, user, pass, from_name || '', from_email, secure ? 1 : 0, id);
-    } else {
-      const stmt = db.prepare(`
-        UPDATE smtps 
-        SET host = ?, port = ?, user = ?, from_name = ?, from_email = ?, secure = ?
-        WHERE id = ?
-      `);
-      stmt.run(host, port, user, from_name || '', from_email, secure ? 1 : 0, id);
+      updateData.pass = pass;
     }
+
+    const { error } = await supabase
+      .from('smtps')
+      .update(updateData)
+      .eq('id', id);
+
+    if (error) throw error;
     
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -66,7 +82,13 @@ export async function PATCH(req: Request) {
     const { id, is_active } = await req.json();
     if (!id) return NextResponse.json({ error: 'ID is required' }, { status: 400 });
 
-    db.prepare('UPDATE smtps SET is_active = ? WHERE id = ?').run(is_active ? 1 : 0, id);
+    const { error } = await supabase
+      .from('smtps')
+      .update({ is_active: is_active ? 1 : 0 })
+      .eq('id', id);
+
+    if (error) throw error;
+
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });
@@ -79,7 +101,13 @@ export async function DELETE(req: Request) {
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'ID is required' }, { status: 400 });
 
-    db.prepare('DELETE FROM smtps WHERE id = ?').run(id);
+    const { error } = await supabase
+      .from('smtps')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });

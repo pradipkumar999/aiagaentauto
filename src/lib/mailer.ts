@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import db from './db';
+import supabase from './db';
 
 interface MailOptions {
   to: string;
@@ -17,26 +17,39 @@ interface SMTPConfig {
   pass: string;
   from_name: string;
   from_email: string;
-  secure: number;
-  is_active: number;
+  secure: boolean;
+  is_active: boolean;
 }
 
 export async function sendEmail({ to, subject, text, html, smtpId }: MailOptions) {
   // Get SMTP configuration
   let smtp: SMTPConfig | undefined;
+  
   if (smtpId) {
-    smtp = db.prepare('SELECT * FROM smtps WHERE id = ?').get(smtpId) as SMTPConfig | undefined;
+    const { data } = await supabase
+      .from('smtps')
+      .select('*')
+      .eq('id', smtpId)
+      .single();
+    smtp = data as SMTPConfig;
   } else {
-    smtp = db.prepare('SELECT * FROM smtps WHERE is_active = 1 ORDER BY RANDOM() LIMIT 1').get() as SMTPConfig | undefined;
+    // In Supabase/Postgres, we can't easily use RANDOM() via the client without RPC,
+    // so we'll fetch active ones and pick one.
+    const { data } = await supabase
+      .from('smtps')
+      .select('*')
+      .eq('is_active', true);
+    
+    if (data && data.length > 0) {
+      smtp = data[Math.floor(Math.random() * data.length)] as SMTPConfig;
+    }
   }
 
   if (!smtp) {
     throw new Error("No active SMTP configuration found.");
   }
 
-  // Robust connection logic:
-  // Port 465 usually requires secure: true
-  // Port 587 or 25 usually requires secure: false (it uses STARTTLS)
+  // Robust connection logic
   const isSecure = smtp.port === 465;
 
   const transporter = nodemailer.createTransport({
@@ -48,7 +61,6 @@ export async function sendEmail({ to, subject, text, html, smtpId }: MailOptions
       pass: smtp.pass,
     },
     tls: {
-      // Do not fail on invalid certs (common on shared hosting)
       rejectUnauthorized: false
     }
   });

@@ -1,24 +1,36 @@
 import { NextResponse } from 'next/server';
-import db from '@/lib/db';
+import supabase from '@/lib/db';
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const emailId = searchParams.get('emailId');
-  const contactId = searchParams.get('contactId');
+  try {
+    const { searchParams } = new URL(req.url);
+    const emailId = searchParams.get('emailId');
+    const contactId = searchParams.get('contactId');
 
-  if (emailId) {
-    const replies = db.prepare(`
-      SELECT * FROM replies WHERE email_id = ? ORDER BY received_at ASC
-    `).all(emailId);
-    return NextResponse.json(replies);
+    if (emailId) {
+      const { data: replies, error } = await supabase
+        .from('replies')
+        .select('*')
+        .eq('email_id', emailId)
+        .order('received_at', { ascending: true });
+      
+      if (error) throw error;
+      return NextResponse.json(replies);
+    }
+
+    if (contactId) {
+      const { data: replies, error } = await supabase
+        .from('replies')
+        .select('*')
+        .eq('contact_id', contactId)
+        .order('received_at', { ascending: true });
+
+      if (error) throw error;
+      return NextResponse.json(replies);
+    }
+
+    return NextResponse.json({ error: 'Missing emailId or contactId' }, { status: 400 });
+  } catch (error) {
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
-
-  if (contactId) {
-    const replies = db.prepare(`
-      SELECT * FROM replies WHERE contact_id = ? ORDER BY received_at ASC
-    `).all(contactId);
-    return NextResponse.json(replies);
-  }
-
-  return NextResponse.json({ error: 'Missing emailId or contactId' }, { status: 400 });
 }

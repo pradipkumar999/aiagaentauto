@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server';
-import db from '@/lib/db';
+import supabase from '@/lib/db';
 import { generateEmail } from '@/lib/gemini';
 import { sendEmail } from '@/lib/mailer';
 
 export async function POST(req: Request) {
   let campaignId: number | null = null;
   
-  const addLog = (msg: string, type: string = 'info') => {
+  const addLog = async (msg: string, type: string = 'info') => {
     if (campaignId) {
-      db.prepare(`INSERT INTO campaign_logs (campaign_id, msg, type) VALUES (?, ?, ?)`).run(campaignId, msg, type);
+      await supabase.from('campaign_logs').insert({ campaign_id: campaignId, msg, type });
     }
     console.log(`[CAMPAIGN LOG] [${type.toUpperCase()}] ${msg}`);
   };
@@ -19,52 +19,75 @@ export async function POST(req: Request) {
     const campaignName = name || `Campaign - ${new Date().toLocaleString()}`;
 
     // 1. Create campaign record
-    const insertCampaign = db.prepare(`
-      INSERT INTO campaigns (name, product_id, status, created_at)
-      VALUES (?, ?, 'active', CURRENT_TIMESTAMP)
-    `);
-    const campaignResult = insertCampaign.run(campaignName, productId);
-    campaignId = campaignResult.lastInsertRowid as number;
+    const { data: campaignData, error: campaignError } = await supabase
+      .from('campaigns')
+      .insert({ name: campaignName, product_id: productId, status: 'active' })
+      .select('id')
+      .single();
 
-    addLog(`Campaign initialized: ${campaignName}`, 'info');
+    if (campaignError) throw campaignError;
+    campaignId = campaignData.id;
+
+    await addLog(`Campaign initialized: ${campaignName}`, 'info');
 
     // 2. Reset stop flag
-    db.prepare('UPDATE settings SET stop_requested = 0 WHERE id = 1').run();
+    await supabase.from('settings').update({ stop_requested: 0 }).eq('id', 1);
     
     // 3. Get Limits
-    const settings = db.prepare('SELECT daily_email_limit FROM settings WHERE id = 1').get() as { daily_email_limit: number };
+    const { data: settings, error: settingsError } = await supabase
+      .from('settings')
+      .select('daily_email_limit')
+      .eq('id', 1)
+      .single();
+    
+    if (settingsError && settingsError.code !== 'PGRST116') throw settingsError;
+    
     const perSmtpLimit = settings?.daily_email_limit || 50;
-    addLog(`Daily limit set to ${perSmtpLimit} emails per SMTP.`, 'info');
+    await addLog(`Daily limit set to ${perSmtpLimit} emails per SMTP.`, 'info');
 
     // 4. Get Product
-    const product = db.prepare('SELECT * FROM affiliate_products WHERE id = ?').get(productId) as { name: string, link: string };
-    if (!product) {
-      addLog(`Error: Product ID ${productId} not found.`, 'error');
+    const { data: product, error: productError } = await supabase
+      .from('affiliate_products')
+      .select('*')
+      .eq('id', productId)
+      .single();
+
+    if (productError || !product) {
+      await addLog(`Error: Product ID ${productId} not found.`, 'error');
       throw new Error("Product not found.");
     }
-    addLog(`Found product: ${product.name}`, 'info');
+    await addLog(`Found product: ${product.name}`, 'info');
 
     // 5. Get Active SMTPs and Capacity
-    interface SMTPEntry {
-      id: number;
-      user: string;
-      is_active: number;
-    }
-    const activeSmtps = db.prepare('SELECT * FROM smtps WHERE is_active = 1').all() as SMTPEntry[];
-    if (activeSmtps.length === 0) {
-      addLog("Error: No active SMTP configurations found.", 'error');
+    const { data: activeSmtps, error: smtpsError } = await supabase
+      .from('smtps')
+      .select('*')
+      .eq('is_active', 1);
+
+    if (smtpsError) throw smtpsError;
+    if (!activeSmtps || activeSmtps.length === 0) {
+      await addLog("Error: No active SMTP configurations found.", 'error');
       throw new Error("No active SMTPs.");
     }
-    addLog(`Found ${activeSmtps.length} active SMTP accounts.`, 'info');
+    await addLog(`Found ${activeSmtps.length} active SMTP accounts.`, 'info');
 
     const today = new Date().toISOString().split('T')[0];
     let totalCapacity = 0;
     const smtpCapacityMap: { id: number, user: string, remaining: number }[] = [];
 
     for (const smtp of activeSmtps) {
-      const sentToday = db.prepare(`SELECT COUNT(*) as count FROM emails WHERE smtp_id = ? AND date(sent_at) = date(?)`).get(smtp.id, today) as { count: number };
-      const remaining = Math.max(0, perSmtpLimit - sentToday.count);
-      addLog(`SMTP ${smtp.user}: ${sentToday.count} sent today, ${remaining} slots available.`, 'info');
+      const { count, error: countError } = await supabase
+        .from('emails')
+        .select('*', { count: 'exact', head: true })
+        .eq('smtp_id', smtp.id)
+        .gte('sent_at', `${today}T00:00:00`)
+        .lte('sent_at', `${today}T23:59:59`);
+      
+      if (countError) throw countError;
+
+      const sentToday = count || 0;
+      const remaining = Math.max(0, perSmtpLimit - sentToday);
+      await addLog(`SMTP ${smtp.user}: ${sentToday} sent today, ${remaining} slots available.`, 'info');
       
       if (remaining > 0) {
         totalCapacity += remaining;
@@ -73,24 +96,24 @@ export async function POST(req: Request) {
     }
 
     if (totalCapacity === 0) {
-      addLog("Error: Daily capacity reached for all active SMTPs.", 'error');
+      await addLog("Error: Daily capacity reached for all active SMTPs.", 'error');
       throw new Error("Daily limit reached.");
     }
-    addLog(`Total capacity available: ${totalCapacity} emails.`, 'info');
+    await addLog(`Total capacity available: ${totalCapacity} emails.`, 'info');
 
     // 6. Get Pending Contacts
-    interface ContactEntry {
-      id: number;
-      name: string;
-      email: string;
-      status: string;
-    }
-    const contacts = db.prepare(`SELECT * FROM contacts WHERE status = 'pending' LIMIT ?`).all(totalCapacity) as ContactEntry[];
-    addLog(`Found ${contacts.length} pending contacts in the database.`, 'info');
+    const { data: contacts, error: contactsError } = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('status', 'pending')
+      .limit(totalCapacity);
     
-    if (contacts.length === 0) {
-      addLog("No pending contacts found to process.", 'info');
-      db.prepare("UPDATE campaigns SET status = 'completed' WHERE id = ?").run(campaignId);
+    if (contactsError) throw contactsError;
+    await addLog(`Found ${contacts?.length || 0} pending contacts in the database.`, 'info');
+    
+    if (!contacts || contacts.length === 0) {
+      await addLog("No pending contacts found to process.", 'info');
+      await supabase.from('campaigns').update({ status: 'completed' }).eq('id', campaignId);
       return NextResponse.json({ success: true, processed: 0, campaignId });
     }
 
@@ -100,10 +123,10 @@ export async function POST(req: Request) {
 
     for (const contact of contacts) {
       // Check Stop
-      const curSettings = db.prepare('SELECT stop_requested FROM settings WHERE id = 1').get() as { stop_requested: number };
-      if (curSettings.stop_requested === 1) {
-        addLog("Campaign stopped by user request.", 'info');
-        db.prepare("UPDATE campaigns SET status = 'stopped' WHERE id = ?").run(campaignId);
+      const { data: curSettings } = await supabase.from('settings').select('stop_requested').eq('id', 1).single();
+      if (curSettings?.stop_requested === 1) {
+        await addLog("Campaign stopped by user request.", 'info');
+        await supabase.from('campaigns').update({ status: 'stopped' }).eq('id', campaignId);
         break;
       }
 
@@ -112,71 +135,69 @@ export async function POST(req: Request) {
         smtpIndex++;
       }
       if (smtpIndex >= smtpCapacityMap.length) {
-        addLog("SMTP capacity fully exhausted for this run.", 'info');
+        await addLog("SMTP capacity fully exhausted for this run.", 'info');
         break;
       }
       const currentSmtp = smtpCapacityMap[smtpIndex];
 
       try {
-        addLog(`Processing: generating AI content for ${contact.email}...`, 'info');
+        await addLog(`Processing: generating AI content for ${contact.email}...`, 'info');
         
-        // Generate tracking ID
         const trackingId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-
-        // EVERY email gets a unique Subject and Content from Gemini
         const emailData = await generateEmail(contact.name || contact.email.split('@')[0], product.name, product.link, tone);
-        addLog(`AI content created for ${contact.email}.`, 'info');
+        await addLog(`AI content created for ${contact.email}.`, 'info');
 
-        // Wrap links and add tracking pixel
         const trackedLink = `${origin}/api/track/click?id=${trackingId}&url=${encodeURIComponent(product.link)}`;
         const linkRegex = new RegExp(product.link.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-        
-        // Use original content for text, and masked link for HTML
         const maskedLink = `<a href="${trackedLink}">${product.link}</a>`;
         const htmlContent = emailData.content.replace(linkRegex, maskedLink).replace(/\n/g, '<br>') + `<img src="${origin}/api/track/open?id=${trackingId}" width="1" height="1" style="display:none;" />`;
 
-        addLog(`Sending email to ${contact.email} using ${currentSmtp.user}...`, 'info');
+        await addLog(`Sending email to ${contact.email} using ${currentSmtp.user}...`, 'info');
         await sendEmail({
           to: contact.email,
           subject: emailData.subject,
-          text: emailData.content, // Shows original link
-          html: htmlContent,      // Shows original link text but clickable to tracker
+          text: emailData.content,
+          html: htmlContent,
           smtpId: currentSmtp.id
         });
 
-        // Log Email with tracking_id
-        db.prepare(`
-          INSERT INTO emails (contact_id, smtp_id, campaign_id, subject, content, status, sent_at, tracking_id)
-          VALUES (?, ?, ?, ?, ?, 'sent', CURRENT_TIMESTAMP, ?)
-        `).run(contact.id, currentSmtp.id, campaignId, emailData.subject, emailData.content, trackingId);
+        // Log Email
+        await supabase.from('emails').insert({
+          contact_id: contact.id,
+          smtp_id: currentSmtp.id,
+          campaign_id: campaignId,
+          subject: emailData.subject,
+          content: emailData.content,
+          status: 'sent',
+          tracking_id: trackingId
+        });
 
-        // Update contact to 'sent'
-        db.prepare("UPDATE contacts SET status = 'sent' WHERE id = ?").run(contact.id);
+        // Update contact
+        await supabase.from('contacts').update({ status: 'sent' }).eq('id', contact.id);
         
         currentSmtp.remaining--;
         processed++;
-        addLog(`Successfully sent to ${contact.email}.`, 'success');
+        await addLog(`Successfully sent to ${contact.email}.`, 'success');
 
-        // WAIT 5 SECONDS between emails
         if (processed < contacts.length) {
-          addLog("Waiting 5 seconds before next email...", 'info');
+          await addLog("Waiting 5 seconds before next email...", 'info');
           await new Promise(r => setTimeout(r, 5000));
         }
         
       } catch (err) {
-        addLog(`Failed to process ${contact.email}: ${(err as Error).message}`, 'error');
+        await addLog(`Failed to process ${contact.email}: ${(err as Error).message}`, 'error');
         console.error(`[FAIL] ${contact.email}:`, err);
       }
     }
 
-    db.prepare("UPDATE campaigns SET status = 'completed' WHERE id = ?").run(campaignId);
-    addLog(`Campaign finished. Total emails processed: ${processed}`, 'success');
+    await supabase.from('campaigns').update({ status: 'completed' }).eq('id', campaignId);
+    await addLog(`Campaign finished. Total emails processed: ${processed}`, 'success');
     return NextResponse.json({ success: true, processed, campaignId });
 
   } catch (error) {
     const errorMsg = (error as Error).message;
-    addLog(`Critical Error: ${errorMsg}`, 'error');
-    if (campaignId) db.prepare("UPDATE campaigns SET status = 'failed' WHERE id = ?").run(campaignId);
+    await addLog(`Critical Error: ${errorMsg}`, 'error');
+    if (campaignId) await supabase.from('campaigns').update({ status: 'failed' }).eq('id', campaignId);
     return NextResponse.json({ error: errorMsg, campaignId }, { status: 500 });
   }
 }
@@ -187,25 +208,26 @@ export async function DELETE(req: Request) {
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'ID is required' }, { status: 400 });
 
-    // Start a transaction to ensure all or nothing
-    const deleteTransaction = db.transaction(() => {
-      // 1. Delete replies associated with emails from this campaign
-      db.prepare(`
-        DELETE FROM replies 
-        WHERE email_id IN (SELECT id FROM emails WHERE campaign_id = ?)
-      `).run(id);
+    // In Supabase we don't have easy client-side transactions. 
+    // We'll run them sequentially.
+    
+    // 1. Get email IDs for this campaign to delete replies
+    const { data: emails } = await supabase.from('emails').select('id').eq('campaign_id', id);
+    const emailIds = emails?.map(e => e.id) || [];
 
-      // 2. Delete emails associated with this campaign
-      db.prepare('DELETE FROM emails WHERE campaign_id = ?').run(id);
+    if (emailIds.length > 0) {
+      await supabase.from('replies').delete().in('email_id', emailIds);
+    }
 
-      // 3. Delete related logs
-      db.prepare('DELETE FROM campaign_logs WHERE campaign_id = ?').run(id);
+    // 2. Delete emails
+    await supabase.from('emails').delete().eq('campaign_id', id);
 
-      // 4. Finally, delete the campaign
-      db.prepare('DELETE FROM campaigns WHERE id = ?').run(id);
-    });
+    // 3. Delete logs
+    await supabase.from('campaign_logs').delete().eq('campaign_id', id);
 
-    deleteTransaction();
+    // 4. Delete campaign
+    const { error } = await supabase.from('campaigns').delete().eq('id', id);
+    if (error) throw error;
     
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -214,14 +236,28 @@ export async function DELETE(req: Request) {
 }
 
 export async function GET() {
-  const campaigns = db.prepare(`
-    SELECT c.*, p.name as product_name, 
-    (SELECT COUNT(*) FROM emails WHERE campaign_id = c.id) as sent_count,
-    (SELECT SUM(opened) FROM emails WHERE campaign_id = c.id) as opened_count,
-    (SELECT SUM(clicked) FROM emails WHERE campaign_id = c.id) as clicked_count
-    FROM campaigns c
-    JOIN affiliate_products p ON c.product_id = p.id
-    ORDER BY c.created_at DESC
-  `).all();
-  return NextResponse.json(campaigns);
+  try {
+    const { data: campaigns, error } = await supabase
+      .from('campaigns')
+      .select(`
+        *,
+        product:affiliate_products(name),
+        emails(opened, clicked)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const formattedCampaigns = campaigns.map((c: any) => ({
+      ...c,
+      product_name: c.product?.name,
+      sent_count: c.emails?.length || 0,
+      opened_count: c.emails?.reduce((sum: number, e: any) => sum + (e.opened || 0), 0),
+      clicked_count: c.emails?.reduce((sum: number, e: any) => sum + (e.clicked || 0), 0)
+    }));
+
+    return NextResponse.json(formattedCampaigns);
+  } catch (error) {
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  }
 }
