@@ -9,7 +9,8 @@ import {
   Inbox, 
   Users, 
   Settings,
-  LogOut
+  LogOut,
+  ShieldCheck
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -27,6 +28,7 @@ const Sidebar = () => {
     { name: 'Affiliate Products', icon: ShoppingBag, href: '/products' },
     { name: 'Email Campaign', icon: Mail, href: '/campaigns' },
     { name: 'SMTP', icon: Mail, href: '/smtp' },
+    { name: 'Domain Health', icon: ShieldCheck, href: '/health' },
     { name: 'Inbox', icon: Inbox, href: '/inbox' },
     { name: 'Contacts', icon: Users, href: '/contacts' },
     { name: 'Settings', icon: Settings, href: '/settings' },
