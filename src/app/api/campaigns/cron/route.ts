@@ -6,6 +6,7 @@ import { sendEmail } from '@/lib/mailer';
 export const dynamic = 'force-dynamic';
 
 const CRON_SECRET = process.env.CRON_SECRET || 'my_secure_cron_key_123';
+const BATCH_SIZE = 5; // Process 5 emails per cron run to stay under 10s Vercel limit
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -19,21 +20,20 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Database connection error' }, { status: 500 });
   }
 
-  console.log('--- STARTING CAMPAIGN CRON JOB ---');
+  console.log('--- STARTING CAMPAIGN BATCH PROCESSOR ---');
 
   try {
-    // 1. Find all active campaigns
-    const { data: activeCampaigns, error: campError } = await supabase
+    // 1. Get Active Campaign
+    const { data: activeCampaigns } = await supabase
       .from('campaigns')
       .select('*, product:affiliate_products(*)')
       .eq('status', 'active');
 
-    if (campError) throw campError;
     if (!activeCampaigns || activeCampaigns.length === 0) {
-      return NextResponse.json({ message: 'No active campaigns to process.' });
+      return NextResponse.json({ message: 'No active campaigns.' });
     }
 
-    // 2. Get global settings
+    // 2. Get Global Settings
     const { data: settings } = await supabase.from('settings').select('*').eq('id', 1).single();
     const perSmtpLimit = settings?.daily_email_limit || 50;
 
@@ -43,11 +43,10 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'No active SMTPs' }, { status: 500 });
     }
 
-    // 4. Calculate Capacity
+    // 4. Check SMTP Capacity for Today
     const today = new Date().toISOString().split('T')[0];
     const smtpCapacityMap: any[] = [];
-    let totalCapacity = 0;
-
+    
     for (const smtp of activeSmtps) {
       const { count } = await supabase
         .from('emails')
@@ -55,50 +54,43 @@ export async function GET(req: Request) {
         .eq('smtp_id', smtp.id)
         .gte('sent_at', `${today}T00:00:00`);
       
-      const sentToday = count || 0;
-      const remaining = Math.max(0, perSmtpLimit - sentToday);
+      const remaining = Math.max(0, perSmtpLimit - (count || 0));
       if (remaining > 0) {
-        totalCapacity += remaining;
         smtpCapacityMap.push({ ...smtp, remaining });
       }
     }
 
-    if (totalCapacity === 0) {
-      console.log('Daily limit reached for all SMTPs. Waiting for tomorrow.');
-      return NextResponse.json({ message: 'Daily limit reached. Resuming tomorrow.' });
+    if (smtpCapacityMap.length === 0) {
+      return NextResponse.json({ message: 'All SMTPs hit daily limit. Resuming tomorrow.' });
     }
 
-    // 5. Process Campaigns
+    // 5. Pick Batch of Contacts
     let totalProcessed = 0;
     const origin = new URL(req.url).origin;
 
-    // Process only a small batch (e.g., 5-10) per cron run to stay under Vercel's 10s limit
-    const BATCH_SIZE = 5; 
-
     for (const campaign of activeCampaigns) {
-      if (totalProcessed >= BATCH_SIZE || totalCapacity <= 0) break;
+      if (totalProcessed >= BATCH_SIZE) break;
 
       const { data: contacts } = await supabase
         .from('contacts')
         .select('*')
         .eq('status', 'pending')
-        .limit(Math.min(BATCH_SIZE - totalProcessed, totalCapacity));
+        .limit(BATCH_SIZE - totalProcessed);
 
       if (!contacts || contacts.length === 0) {
+        // If no more pending contacts, mark campaign as completed
         await supabase.from('campaigns').update({ status: 'completed' }).eq('id', campaign.id);
         continue;
       }
 
-      let smtpIndex = 0;
+      // 6. Process Batch (AI + Send)
       for (const contact of contacts) {
-        while (smtpIndex < smtpCapacityMap.length && smtpCapacityMap[smtpIndex].remaining <= 0) {
-          smtpIndex++;
-        }
-        if (smtpIndex >= smtpCapacityMap.length) break;
-        const currentSmtp = smtpCapacityMap[smtpIndex];
+        // Pick SMTP (Round Robin / Rotation)
+        const currentSmtp = smtpCapacityMap[totalProcessed % smtpCapacityMap.length];
+        if (!currentSmtp || currentSmtp.remaining <= 0) continue;
 
         try {
-          const trackingId = Math.random().toString(36).substring(2, 15);
+          // Generate AI Content (Slow)
           const emailData = await generateEmail(
             contact.name || contact.email.split('@')[0], 
             campaign.product?.name || 'Product', 
@@ -106,11 +98,13 @@ export async function GET(req: Request) {
             settings?.default_tone || 'friendly'
           );
 
+          const trackingId = Math.random().toString(36).substring(2, 15);
           const trackedLink = `${origin}/api/track/click?id=${trackingId}&url=${encodeURIComponent(campaign.product?.link || '')}`;
           const linkRegex = new RegExp((campaign.product?.link || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
           const maskedLink = `<a href="${trackedLink}">${campaign.product?.link}</a>`;
           const htmlContent = emailData.content.replace(linkRegex, maskedLink).replace(/\n/g, '<br>') + `<img src="${origin}/api/track/open?id=${trackingId}" width="1" height="1" style="display:none;" />`;
 
+          // Send Email (Fast)
           await sendEmail({
             to: contact.email,
             subject: emailData.subject,
@@ -119,6 +113,7 @@ export async function GET(req: Request) {
             smtpId: currentSmtp.id
           });
 
+          // Update DB
           await supabase.from('emails').insert({
             contact_id: contact.id,
             smtp_id: currentSmtp.id,
@@ -132,17 +127,22 @@ export async function GET(req: Request) {
           await supabase.from('contacts').update({ status: 'sent' }).eq('id', contact.id);
           
           currentSmtp.remaining--;
-          totalCapacity--;
           totalProcessed++;
 
+          // Log Progress
           await supabase.from('campaign_logs').insert({
             campaign_id: campaign.id,
-            msg: `Sent email to ${contact.email}`,
+            msg: `Successfully sent to ${contact.email} via ${currentSmtp.user}`,
             type: 'success'
           });
 
         } catch (err) {
-          console.error(`Cron error for ${contact.email}:`, err);
+          console.error(`Error processing ${contact.email}:`, err);
+          await supabase.from('campaign_logs').insert({
+            campaign_id: campaign.id,
+            msg: `Failed for ${contact.email}: ${(err as Error).message}`,
+            type: 'error'
+          });
         }
       }
     }
@@ -150,7 +150,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ success: true, processed: totalProcessed });
 
   } catch (error) {
-    console.error('CRON FATAL ERROR:', error);
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }
