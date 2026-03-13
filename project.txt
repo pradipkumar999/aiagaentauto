@@ -1,0 +1,248 @@
+AI Affiliate Outreach Agent – Complete Plan
+1️⃣ Tech Stack
+
+Recommended stack (works perfectly on Vercel):
+
+Next.js 14 (App Router)
+
+TypeScript
+
+Tailwind CSS
+
+SQLite (local database)
+
+Nodemailer (SMTP sending)
+
+Google Gemini API (AI email writing)
+
+CSV upload for email lists
+
+No login/register required.
+
+2️⃣ Dashboard Structure
+
+Sidebar menu:
+
+Dashboard
+Affiliate Products
+Email Campaign
+Inbox
+Contacts
+Settings
+3️⃣ Dashboard Page
+
+Shows stats.
+
+Widgets
+
+total contacts
+
+emails sent
+
+replies received
+
+affiliate clicks
+
+campaign status
+
+Example cards:
+
+Total Leads: 12,430
+Emails Sent: 8,540
+Replies: 230
+Conversion: 3.2%
+4️⃣ Affiliate Products Page
+
+User adds products manually.
+
+Fields:
+
+Product Name
+Product Description
+Affiliate Link
+Target Audience
+Commission %
+
+Example:
+
+Product: Medical SEO Book
+Affiliate Link: https://amzn.to/xxxxx
+Audience: Doctors
+Commission: 30%
+
+AI will use this info when writing emails.
+
+5️⃣ Contacts Page (CSV Upload)
+
+Upload CSV.
+
+Example CSV:
+
+name,email,website
+John Smith,john@clinic.com,clinic.com
+Dr Brown,brown@dental.com,dental.com
+
+System saves contacts in database.
+
+6️⃣ Email Campaign Page
+
+Campaign creation.
+
+Fields:
+
+Campaign Name
+Affiliate Product
+Email Tone (friendly / professional)
+Daily Email Limit
+Followup Delay
+
+Example:
+
+Campaign: Doctors Outreach
+Product: Medical SEO Book
+Daily limit: 50
+Followup: 3 days
+7️⃣ Gemini AI Email Generator
+
+Prompt example:
+
+Write a short outreach email.
+
+Target: Doctors
+Product: {product_name}
+Affiliate link: {link}
+
+Tone: Friendly
+
+Goal: Recommend useful book.
+Keep email under 120 words.
+Add CTA to check the link.
+
+Generated email example:
+
+Subject: Quick resource for your clinic
+
+Hi Dr. Smith,
+
+I came across a book that many clinics are using
+to improve their online presence.
+
+It explains simple strategies to attract
+more patients from Google.
+
+You might find it useful:
+
+{affiliate link}
+
+Worth a quick look!
+
+Best
+8️⃣ Email Sending System
+
+Use SMTP via Nodemailer.
+
+Example settings:
+
+SMTP Host
+SMTP Port
+SMTP Email
+SMTP Password
+Daily Limit
+
+Example code logic:
+
+for each contact
+   generate AI email
+   send email via SMTP
+   mark as sent
+
+Daily sending limit prevents spam flags.
+
+9️⃣ Inbox (Reply Reader)
+
+Agent connects to inbox using IMAP.
+
+Features:
+
+fetch replies
+
+show conversations
+
+AI reply suggestions
+
+Example reply suggestion:
+
+User: Tell me more about this book
+
+AI Suggestion:
+
+Hi,
+
+Yes, the book focuses on simple strategies
+to bring more patients through Google search.
+
+Here is the link again:
+
+{affiliate link}
+🔟 Settings Page
+
+Fields:
+
+Gemini API key
+SMTP host
+SMTP port
+SMTP email
+SMTP password
+Daily email limit
+Default tone
+Database Tables
+contacts
+id
+name
+email
+website
+status
+created_at
+affiliate_products
+id
+name
+description
+link
+audience
+commission
+campaigns
+id
+name
+product_id
+daily_limit
+status
+emails
+id
+contact_id
+campaign_id
+subject
+content
+status
+sent_at
+replies
+id
+contact_id
+email_id
+message
+received_at
+AI Agent Workflow
+CSV Upload
+   ↓
+Contacts Database
+   ↓
+Campaign Start
+   ↓
+Gemini AI generates email
+   ↓
+SMTP sends email
+   ↓
+Inbox monitor
+   ↓
+AI suggests reply
+
+Fully automated.
