@@ -4,7 +4,7 @@ import { jwtVerify } from 'jose';
 
 // In Next.js middleware (Edge Runtime), we can't easily access the SQLite DB.
 // For a production app, you should set this in your environment variables.
-const JWT_SECRET = 'default_secret_fallback'; 
+const JWT_SECRET = process.env.JWT_SECRET || 'default_secret_fallback_key_123'; 
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

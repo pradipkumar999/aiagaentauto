@@ -30,8 +30,7 @@ export default function LoginPage() {
 
       if (res.ok) {
         console.log('Login success, redirecting...');
-        router.push('/');
-        router.refresh();
+        window.location.href = '/';
       } else {
         setError(data.error || 'Login failed');
       }
