@@ -1,7 +1,7 @@
 import { SignJWT, jwtVerify } from 'jose';
 import { cookies } from 'next/headers';
 
-const JWT_SECRET = 'default_secret_fallback';
+const JWT_SECRET = process.env.JWT_SECRET || 'default_secret_fallback_key_123';
 
 const getSecret = () => {
   return new TextEncoder().encode(JWT_SECRET);
