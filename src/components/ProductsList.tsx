@@ -173,20 +173,22 @@ export default function ProductsPage({ products: initialProducts }: { products: 
               <div className="p-3 bg-blue-100 rounded-lg text-blue-600">
                 <ShoppingBag className="w-6 h-6" />
               </div>
-              <div className="flex space-x-3">
+              <div className="flex space-x-2">
                 <button 
                   onClick={() => startEdit(product)}
-                  className="text-blue-600 hover:text-blue-800 p-1.5 bg-blue-50 rounded-md transition-all flex items-center justify-center"
+                  className="text-blue-600 hover:text-blue-800 p-1.5 bg-blue-50 rounded-md transition-all flex items-center space-x-1"
                   title="Edit Product"
                 >
                   <Edit className="w-4 h-4" />
+                  <span className="text-xs font-medium">Edit</span>
                 </button>
                 <button 
                   onClick={() => deleteProduct(product.id)}
-                  className="text-red-600 hover:text-red-800 p-1.5 bg-red-50 rounded-md transition-all flex items-center justify-center"
+                  className="text-red-600 hover:text-red-800 p-1.5 bg-red-50 rounded-md transition-all flex items-center space-x-1"
                   title="Delete Product"
                 >
                   <Trash2 className="w-4 h-4" />
+                  <span className="text-xs font-medium">Delete</span>
                 </button>
               </div>
             </div>
