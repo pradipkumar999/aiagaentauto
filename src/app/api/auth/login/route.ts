@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import db from '@/lib/db';
+import getDb from '@/lib/db';
 import { login } from '@/lib/auth';
 
 export async function POST(req: Request) {
@@ -13,6 +13,11 @@ export async function POST(req: Request) {
     if (email === adminEmail && password === adminPass) {
       await login({ id: 1, email: adminEmail });
       return NextResponse.json({ success: true });
+    }
+
+    const db = getDb();
+    if (!db) {
+      return NextResponse.json({ error: 'Database unavailable and ENV login failed' }, { status: 500 });
     }
 
     const user = db.prepare('SELECT id, email FROM users WHERE email = ? AND password = ?').get(email, password) as { id: number, email: string } | undefined;
