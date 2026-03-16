@@ -7,7 +7,6 @@ import {
   Loader2, 
   Square, 
   History, 
-  Clock, 
   Trash2, 
   PlusCircle, 
   Zap, 
@@ -15,7 +14,9 @@ import {
   CheckCircle2, 
   XCircle, 
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  Terminal,
+  X
 } from 'lucide-react';
 
 interface CampaignRecord {
@@ -47,13 +48,28 @@ export default function CampaignsPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [logs, setLogs] = useState<CampaignLog[]>([]);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
-  
+
+  // Console drawer state
+  const [consoleOpen, setConsoleOpen] = useState(false);
+  const [consoleCampaign, setConsoleCampaign] = useState<CampaignRecord | null>(null);
+  const [consoleLogs, setConsoleLogs] = useState<CampaignLog[]>([]);
+  const [consoleLoading, setConsoleLoading] = useState(false);
+  const consolePollingRef = useRef<NodeJS.Timeout | null>(null);
+  const consoleBottomRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
     fetchData();
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
   }, []);
+
+  // Scroll to bottom when new console logs arrive
+  useEffect(() => {
+    if (consoleOpen) {
+      consoleBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [consoleLogs, consoleOpen]);
 
   async function fetchData() {
     try {
@@ -71,18 +87,51 @@ export default function CampaignsPage() {
 
   async function startPolling(campaignId: number) {
     if (pollingRef.current) clearInterval(pollingRef.current);
-    
     pollingRef.current = setInterval(async () => {
       try {
         const res = await fetch(`/api/campaigns/logs?id=${campaignId}`, { cache: 'no-store' });
         const data = await res.json();
-        if (Array.isArray(data)) {
-          setLogs(data);
-        }
+        if (Array.isArray(data)) setLogs(data);
       } catch (err) {
         console.error('Polling error:', err);
       }
     }, 1500);
+  }
+
+  async function openConsole(c: CampaignRecord) {
+    setConsoleCampaign(c);
+    setConsoleLogs([]);
+    setConsoleLoading(true);
+    setConsoleOpen(true);
+
+    // Initial fetch
+    try {
+      const res = await fetch(`/api/campaigns/logs?id=${c.id}`, { cache: 'no-store' });
+      const data = await res.json();
+      if (Array.isArray(data)) setConsoleLogs(data);
+    } catch (err) {
+      console.error('Console fetch error:', err);
+    }
+    setConsoleLoading(false);
+
+    // Start polling
+    if (consolePollingRef.current) clearInterval(consolePollingRef.current);
+    consolePollingRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/campaigns/logs?id=${c.id}`, { cache: 'no-store' });
+        const data = await res.json();
+        if (Array.isArray(data)) setConsoleLogs(data);
+      } catch (err) {
+        console.error('Console polling error:', err);
+      }
+    }, 2000);
+  }
+
+  function closeConsole() {
+    setConsoleOpen(false);
+    if (consolePollingRef.current) clearInterval(consolePollingRef.current);
+    setConsoleCampaign(null);
+    setConsoleLogs([]);
   }
 
   async function stopCampaign() {
@@ -98,10 +147,8 @@ export default function CampaignsPage() {
       alert("Please select a product");
       return;
     }
-
     setIsRunning(true);
     setLogs([]);
-    
     try {
       const res = await fetch('/api/campaigns/run', {
         method: 'POST',
@@ -109,17 +156,14 @@ export default function CampaignsPage() {
         headers: { 'Content-Type': 'application/json' }
       });
       const data = await res.json();
-      
       if (data.campaignId) {
         startPolling(data.campaignId);
       }
-
       setTimeout(async () => {
         if (pollingRef.current) clearInterval(pollingRef.current);
         fetchData();
         setIsRunning(false);
       }, 2000);
-
     } catch (err) {
       console.error('Run campaign error:', err);
       setIsRunning(false);
@@ -131,6 +175,7 @@ export default function CampaignsPage() {
     try {
       const res = await fetch(`/api/campaigns/run?id=${id}`, { method: 'DELETE' });
       if (res.ok) {
+        if (consoleCampaign?.id === id) closeConsole();
         fetchData();
       } else {
         const data = await res.json();
@@ -152,6 +197,12 @@ export default function CampaignsPage() {
       default:
         return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800"><AlertCircle className="w-3 h-3 mr-1" /> Failed</span>;
     }
+  };
+
+  const getLogColor = (type: string) => {
+    if (type === 'error') return 'text-red-400';
+    if (type === 'success') return 'text-emerald-400 font-semibold';
+    return 'text-gray-300';
   };
 
   return (
@@ -272,11 +323,7 @@ export default function CampaignsPage() {
               {[...logs].reverse().map((log) => (
                 <div key={log.id} className="flex space-x-3 group animate-in fade-in duration-300">
                   <span className="text-gray-600 shrink-0 select-none">[{new Date(log.created_at).toLocaleTimeString([], { hour12: false })}]</span>
-                  <span className={`${
-                    log.type === 'error' ? 'text-red-400' : 
-                    log.type === 'success' ? 'text-green-400 font-bold' : 
-                    'text-gray-300'
-                  } break-words`}>
+                  <span className={`${getLogColor(log.type)} break-words`}>
                     <span className="text-gray-500 mr-1">$</span>
                     {log.msg}
                   </span>
@@ -302,7 +349,7 @@ export default function CampaignsPage() {
                 <th className="px-6 py-4 text-center">Reach</th>
                 <th className="px-6 py-4 text-center">Engagement</th>
                 <th className="px-6 py-4 text-center">Status</th>
-                <th className="px-6 py-4">Timeline</th>
+                <th className="px-6 py-4 text-center">Console</th>
                 <th className="px-6 py-4 text-right">Control</th>
               </tr>
             </thead>
@@ -332,11 +379,18 @@ export default function CampaignsPage() {
                   <td className="px-6 py-5 text-center">
                     {getStatusBadge(c.status)}
                   </td>
-                  <td className="px-6 py-5">
-                    <div className="flex items-center text-xs text-gray-500 font-medium">
-                      <Clock className="w-3.5 h-3.5 mr-1.5 opacity-60" />
-                      {new Date(c.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' })}
-                    </div>
+                  <td className="px-6 py-5 text-center">
+                    <button
+                      onClick={() => openConsole(c)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                        consoleCampaign?.id === c.id && consoleOpen
+                          ? 'bg-gray-900 text-emerald-400 border-gray-700'
+                          : 'bg-gray-900 text-gray-300 border-gray-700 hover:text-emerald-400 hover:border-emerald-700'
+                      }`}
+                    >
+                      <Terminal className="w-3.5 h-3.5" />
+                      Live Console
+                    </button>
                   </td>
                   <td className="px-6 py-5 text-right">
                     <button 
@@ -364,6 +418,93 @@ export default function CampaignsPage() {
           </table>
         </div>
       </div>
+
+      {/* Live Console Drawer/Modal */}
+      {consoleOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={closeConsole}
+          />
+          {/* Panel */}
+          <div className="relative z-10 w-full sm:max-w-2xl mx-4 mb-0 sm:mb-0 bg-gray-950 rounded-t-2xl sm:rounded-2xl shadow-2xl border border-gray-800 overflow-hidden flex flex-col"
+            style={{ maxHeight: '80vh' }}
+          >
+            {/* Console Header */}
+            <div className="px-4 py-3 bg-gray-900 border-b border-gray-800 flex items-center justify-between flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="flex space-x-1.5">
+                  <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block">Live Execution Console</span>
+                  {consoleCampaign && (
+                    <span className="text-[11px] text-emerald-400 font-mono">{consoleCampaign.name}</span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5 text-[10px] text-gray-500 font-mono">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" />
+                  LIVE
+                </div>
+                <button
+                  onClick={closeConsole}
+                  className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-800 rounded-lg transition-all"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Log Output */}
+            <div className="flex-1 overflow-y-auto p-4 font-mono text-[11px] space-y-1.5 min-h-[300px]">
+              {consoleLoading && (
+                <div className="flex items-center gap-2 text-gray-500 py-4">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Fetching logs...</span>
+                </div>
+              )}
+              {!consoleLoading && consoleLogs.length === 0 && (
+                <div className="flex flex-col items-center justify-center h-full py-16 text-gray-600 italic">
+                  <BarChart3 className="w-10 h-10 mb-3 opacity-20" />
+                  <span>No logs yet for this campaign.</span>
+                </div>
+              )}
+              {consoleLogs.map((log) => (
+                <div key={log.id} className="flex gap-3 animate-in fade-in duration-200">
+                  <span className="text-gray-600 shrink-0 select-none">
+                    [{new Date(log.created_at).toLocaleTimeString([], { hour12: false })}]
+                  </span>
+                  <span className={`${getLogColor(log.type)} break-words`}>
+                    <span className="text-gray-600 mr-1">›</span>
+                    {log.msg}
+                  </span>
+                </div>
+              ))}
+              <div ref={consoleBottomRef} />
+            </div>
+
+            {/* Console Footer */}
+            <div className="px-4 py-2 bg-gray-900 border-t border-gray-800 flex items-center justify-between flex-shrink-0">
+              <span className="text-[10px] text-gray-600 font-mono">
+                {consoleLogs.length} log entries · auto-refresh every 2s
+              </span>
+              {consoleCampaign && (
+                <span className={`text-[10px] font-bold uppercase ${
+                  consoleCampaign.status === 'active' ? 'text-blue-400' :
+                  consoleCampaign.status === 'completed' ? 'text-emerald-400' : 'text-gray-500'
+                }`}>
+                  {consoleCampaign.status}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
