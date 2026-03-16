@@ -14,6 +14,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/login') || 
     pathname.startsWith('/api/auth') || 
     pathname.startsWith('/api/track') ||
+    pathname.startsWith('/api/campaigns/cron') ||
+    pathname.startsWith('/api/inbox/sync') ||
     pathname.includes('.');
 
   if (isPublicPath) {
