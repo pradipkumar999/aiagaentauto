@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/db';
+import { processCampaignBatch } from '@/lib/campaign';
 
 export async function POST(req: Request) {
   if (!supabase) {
@@ -121,12 +122,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, message: 'No pending contacts', campaignId });
     }
 
-    // NEW: Return early to avoid Vercel Timeout. The Cron job will pick this up.
-    // We can also trigger the first batch here, but let's keep it clean.
+    // TRIGGER FIRST BATCH IMMEDIATELY
+    const origin = new URL(req.url).origin;
+    const batchResult = await processCampaignBatch(origin);
+    
     return NextResponse.json({ 
       success: true, 
-      message: 'Campaign initialized. Emails will be sent automatically via background worker.', 
-      campaignId 
+      message: 'Campaign initialized. First batch processed.', 
+      campaignId,
+      batchResult
     });
 
   } catch (error) {
