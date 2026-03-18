@@ -21,6 +21,16 @@ interface SMTPConfig {
   is_active: boolean;
 }
 
+export async function getRecentEmailCount(minutes: number) {
+  if (!supabase) return 0;
+  const since = new Date(Date.now() - minutes * 60000).toISOString();
+  const { count } = await supabase
+    .from('emails')
+    .select('*', { count: 'exact', head: true })
+    .gte('sent_at', since);
+  return count || 0;
+}
+
 export async function sendEmail({ to, subject, text, html, smtpId }: MailOptions) {
   if (!supabase) throw new Error('Supabase not initialized');
   // Get SMTP configuration

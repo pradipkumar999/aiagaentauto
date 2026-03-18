@@ -5,8 +5,8 @@ import { Settings as SettingsIcon, Save, RefreshCw, Loader2 } from 'lucide-react
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState({
-    gemini_api_key: '',
-    gemini_model: 'gemini-1.5-flash',
+    claude_api_key: '',
+    claude_model: 'claude-3-5-sonnet-20240620',
     daily_email_limit: 50,
     default_tone: 'friendly'
   });
@@ -19,7 +19,7 @@ export default function SettingsPage() {
     if (!apiKey) return;
     setIsFetchingModels(true);
     try {
-      const res = await fetch('/api/gemini/models', {
+      const res = await fetch('/api/claude/models', {
         method: 'POST',
         body: JSON.stringify({ apiKey }),
         headers: { 'Content-Type': 'application/json' }
@@ -42,8 +42,8 @@ export default function SettingsPage() {
           ...prev, 
           ...data
         }));
-        if (data.gemini_api_key) {
-          fetchModels(data.gemini_api_key);
+        if (data.claude_api_key) {
+          fetchModels(data.claude_api_key);
         }
       }
     });
@@ -83,18 +83,18 @@ export default function SettingsPage() {
           </h3>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700">Gemini API Key</label>
+              <label className="block text-sm font-medium text-gray-700">Claude API Key</label>
               <div className="flex gap-2 mt-1">
                 <input 
                   type="password" 
                   className="flex-1 rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none"
-                  value={settings.gemini_api_key || ''}
-                  onChange={e => setSettings({ ...settings, gemini_api_key: e.target.value })}
+                  value={settings.claude_api_key || ''}
+                  onChange={e => setSettings({ ...settings, claude_api_key: e.target.value })}
                 />
                 <button 
                   type="button"
-                  onClick={() => fetchModels(settings.gemini_api_key)}
-                  disabled={isFetchingModels || !settings.gemini_api_key}
+                  onClick={() => fetchModels(settings.claude_api_key)}
+                  disabled={isFetchingModels || !settings.claude_api_key}
                   className="flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition disabled:opacity-50"
                 >
                   {isFetchingModels ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
@@ -106,12 +106,12 @@ export default function SettingsPage() {
               <label className="block text-sm font-medium text-gray-700">Selected Model</label>
               <select 
                 className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none"
-                value={settings.gemini_model || ''}
-                onChange={e => setSettings({ ...settings, gemini_model: e.target.value })}
+                value={settings.claude_model || ''}
+                onChange={e => setSettings({ ...settings, claude_model: e.target.value })}
               >
                 {/* Always include current model if it's not in the list */}
-                {settings.gemini_model && !models.find(m => m.name === settings.gemini_model) && (
-                  <option value={settings.gemini_model}>{settings.gemini_model}</option>
+                {settings.claude_model && !models.find(m => m.name === settings.claude_model) && (
+                  <option value={settings.claude_model}>{settings.claude_model}</option>
                 )}
                 
                 {models.length > 0 ? (
@@ -119,10 +119,10 @@ export default function SettingsPage() {
                     <option key={m.name} value={m.name}>{m.displayName} ({m.name})</option>
                   ))
                 ) : (
-                  !settings.gemini_model && <option value="">No models fetched yet...</option>
+                  !settings.claude_model && <option value="">No models fetched yet...</option>
                 )}
               </select>
-              <p className="mt-1 text-xs text-gray-500">Note: <b>gemini-1.5-flash</b> is recommended for speed. Use Fetch Models to see more.</p>
+              <p className="mt-1 text-xs text-gray-500">Note: <b>claude-3-5-sonnet-20240620</b> is recommended. Use Fetch Models to see more.</p>
             </div>
           </div>
         </div>

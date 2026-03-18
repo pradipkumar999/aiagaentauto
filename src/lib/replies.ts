@@ -1,8 +1,8 @@
 import imap from 'imap-simple';
 import { simpleParser } from 'mailparser';
 import supabase from './db';
-import { generateAutoReply, generateFollowUpEmail } from './gemini';
-import { sendEmail } from './mailer';
+import { generateAutoReply, generateFollowUpEmail } from './claude';
+import { sendEmail, getRecentEmailCount } from './mailer';
 
 interface SMTPConfig {
   id: number;
@@ -102,6 +102,11 @@ export async function syncReplies() {
 
             // AI AUTO-REPLY
             try {
+              const recentCount = await getRecentEmailCount(2);
+              if (recentCount >= 5) {
+                console.log('--- RATE LIMIT REACHED (AUTO-REPLY SKIPPED) ---');
+                continue; 
+              }
               const aiReplyText = await generateAutoReply(contact.name, originalEmail?.content || "", body);
               const replySubject = (subject && subject.startsWith('Re:')) ? subject : `Re: ${subject || 'Our outreach'}`;
               
@@ -177,6 +182,12 @@ export async function processFollowUps() {
       const product_link = email.campaign?.product?.link;
 
       if (!contact_email || !product_link) continue;
+
+      const recentCount = await getRecentEmailCount(2);
+      if (recentCount >= 5) {
+        console.log('--- RATE LIMIT REACHED (FOLLOW-UP SKIPPED) ---');
+        break; // Stop processing batch if limit reached
+      }
 
       const followUpData = await generateFollowUpEmail(
         contact_name || contact_email.split('@')[0], 

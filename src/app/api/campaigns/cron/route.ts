@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/db';
-import { generateEmail } from '@/lib/gemini';
-import { sendEmail } from '@/lib/mailer';
+import { generateEmail } from '@/lib/claude';
+import { sendEmail, getRecentEmailCount } from '@/lib/mailer';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +21,13 @@ export async function GET(req: Request) {
   }
 
   console.log('--- STARTING CAMPAIGN BATCH PROCESSOR ---');
+
+  // Rate Limiting Check (5 emails per 2 mins)
+  const recentCount = await getRecentEmailCount(2);
+  if (recentCount >= 5) {
+    console.log('--- RATE LIMIT REACHED (5 emails/2 mins) ---');
+    return NextResponse.json({ message: 'Rate limit reached (5 emails per 2 mins). Skipping this run.' });
+  }
 
   try {
     // 1. Get Active Campaign
