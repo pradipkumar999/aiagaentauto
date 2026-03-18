@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import supabase from '@/lib/db';
 import { processCampaignBatch } from '@/lib/campaign';
 
 export const dynamic = 'force-dynamic';
