@@ -42,8 +42,13 @@ export default function SettingsPage() {
           ...prev, 
           ...data
         }));
-        if (data.claude_api_key) {
-          fetchModels(data.claude_api_key);
+        if (data.gemini_api_key) {
+          setSettings(prev => ({
+            ...prev,
+            claude_api_key: data.gemini_api_key,
+            claude_model: data.gemini_model || prev.claude_model
+          }));
+          fetchModels(data.gemini_api_key);
         }
       }
     });

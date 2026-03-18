@@ -6,17 +6,17 @@ export async function generateEmail(target: string, productName: string, link: s
 
   const { data: settings } = await supabase
     .from('settings')
-    .select('claude_api_key, claude_model')
+    .select('gemini_api_key, gemini_model')
     .eq('id', 1)
     .single();
   
-  if (!settings?.claude_api_key) throw new Error("Claude API Key not set in settings.");
+  if (!settings?.gemini_api_key) throw new Error("Claude API Key not set in settings.");
 
   const anthropic = new Anthropic({
-    apiKey: settings.claude_api_key,
+    apiKey: settings.gemini_api_key,
   });
 
-  const modelName = settings.claude_model || "claude-3-5-sonnet-20240620";
+  const modelName = settings.gemini_model || "claude-3-5-sonnet-20240620";
 
   const prompt = `
     Write a short outreach email.
@@ -55,17 +55,17 @@ export async function generateAutoReply(contactName: string, originalEmail: stri
 
   const { data: settings } = await supabase
     .from('settings')
-    .select('claude_api_key, claude_model')
+    .select('gemini_api_key, gemini_model')
     .eq('id', 1)
     .single();
   
-  if (!settings?.claude_api_key) throw new Error("Claude API Key not set in settings.");
+  if (!settings?.gemini_api_key) throw new Error("Claude API Key not set in settings.");
 
   const anthropic = new Anthropic({
-    apiKey: settings.claude_api_key,
+    apiKey: settings.gemini_api_key,
   });
 
-  const modelName = settings.claude_model || "claude-3-5-sonnet-20240620";
+  const modelName = settings.gemini_model || "claude-3-5-sonnet-20240620";
 
   const prompt = `
     You are an AI assistant for a business. A contact has replied to our outreach email.
@@ -94,17 +94,17 @@ export async function generateFollowUpEmail(contactName: string, originalSubject
 
   const { data: settings } = await supabase
     .from('settings')
-    .select('claude_api_key, claude_model')
+    .select('gemini_api_key, gemini_model')
     .eq('id', 1)
     .single();
   
-  if (!settings?.claude_api_key) throw new Error("Claude API Key not set.");
+  if (!settings?.gemini_api_key) throw new Error("Claude API Key not set.");
 
   const anthropic = new Anthropic({
-    apiKey: settings.claude_api_key,
+    apiKey: settings.gemini_api_key,
   });
 
-  const modelName = settings.claude_model || "claude-3-5-sonnet-20240620";
+  const modelName = settings.gemini_model || "claude-3-5-sonnet-20240620";
 
   const prompt = `
     Write a short follow-up email for a previous outreach.
