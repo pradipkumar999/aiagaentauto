@@ -66,25 +66,53 @@ export async function processCampaignBatch(origin: string, campaignId?: number) 
 
   // 6. Process Batch
   let totalProcessed = 0;
+  const timeStr = new Date().toLocaleTimeString([], { hour12: false });
+
   for (const campaign of activeCampaigns) {
     if (totalProcessed >= BATCH_SIZE) break;
 
-    const { data: contacts } = await supabase
+    // ATOMIC PICKUP: Fetch pending contacts and immediately mark them as processing
+    // First, get the IDs of the contacts we want to process
+    const { data: pendingContacts } = await supabase
       .from('contacts')
-      .select('*')
+      .select('id')
       .eq('status', 'pending')
       .limit(BATCH_SIZE - totalProcessed);
 
-    if (!contacts || contacts.length === 0) {
+    if (!pendingContacts || pendingContacts.length === 0) {
       await supabase.from('campaigns').update({ status: 'completed' }).eq('id', campaign.id);
       continue;
     }
+
+    const contactIds = pendingContacts.map(c => c.id);
+
+    // Mark them as processing so no other process picks them up
+    const { data: contacts } = await supabase
+      .from('contacts')
+      .update({ status: 'processing' })
+      .in('id', contactIds)
+      .select();
+
+    if (!contacts || contacts.length === 0) continue;
 
     for (const contact of contacts) {
       const currentSmtp = smtpCapacityMap[totalProcessed % smtpCapacityMap.length];
       if (!currentSmtp || currentSmtp.remaining <= 0) continue;
 
       try {
+        // PRE-SEND VERIFICATION: Check if contact still exists and is still 'processing'
+        // This handles cases where they were deleted or reset during the batch run
+        const { data: verifyContact } = await supabase
+          .from('contacts')
+          .select('id, status')
+          .eq('id', contact.id)
+          .single();
+        
+        if (!verifyContact || verifyContact.status !== 'processing') {
+          console.log(`[${timeStr}] Skipping contact ${contact.email} (already deleted or processed)`);
+          continue;
+        }
+
         const emailData = await generateEmail(
           contact.name || contact.email.split('@')[0], 
           campaign.product?.name || 'Product', 
@@ -116,6 +144,7 @@ export async function processCampaignBatch(origin: string, campaignId?: number) 
           tracking_id: trackingId
         });
 
+        // Final update to sent
         await supabase.from('contacts').update({ status: 'sent' }).eq('id', contact.id);
         
         currentSmtp.remaining--;
@@ -129,6 +158,9 @@ export async function processCampaignBatch(origin: string, campaignId?: number) 
 
       } catch (err) {
         console.error(`Error processing ${contact.email}:`, err);
+        // Reset status to pending only if it's still 'processing'
+        await supabase.from('contacts').update({ status: 'pending' }).match({ id: contact.id, status: 'processing' });
+        
         await supabase.from('campaign_logs').insert({
           campaign_id: campaign.id,
           msg: `Failed for ${contact.email}: ${(err as Error).message}`,
