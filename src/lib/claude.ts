@@ -32,7 +32,9 @@ async function getVPSSettings() {
     .eq("id", 1)
     .single();
 
-  const model = settings?.gemini_model || "phi3:mini";
+  // If DB has old Claude model name, override with phi3:mini
+  const storedModel = settings?.gemini_model || "";
+  const model = (!storedModel || storedModel.startsWith("claude-")) ? "phi3:mini" : storedModel;
   return { model };
 }
 
