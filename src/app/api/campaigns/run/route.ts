@@ -124,7 +124,7 @@ export async function POST(req: Request) {
 
     // TRIGGER FIRST BATCH IMMEDIATELY
     const origin = new URL(req.url).origin;
-    const batchResult = await processCampaignBatch(origin);
+    const batchResult = await processCampaignBatch(origin, campaignId ?? undefined);
     
     return NextResponse.json({ 
       success: true, 

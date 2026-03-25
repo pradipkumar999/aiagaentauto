@@ -4,7 +4,7 @@ import { sendEmail, getRecentEmailCount } from './mailer';
 
 const BATCH_SIZE = 5;
 
-export async function processCampaignBatch(origin: string) {
+export async function processCampaignBatch(origin: string, campaignId?: number) {
   if (!supabase) throw new Error('Database connection error');
 
   console.log('--- STARTING CAMPAIGN BATCH PROCESSOR ---');
@@ -18,10 +18,16 @@ export async function processCampaignBatch(origin: string) {
   }
 
   // 2. Get Active Campaigns
-  const { data: activeCampaigns } = await supabase
+  let query = supabase
     .from('campaigns')
     .select('*, product:affiliate_products(*)')
     .eq('status', 'active');
+  
+  if (campaignId) {
+    query = query.eq('id', campaignId);
+  }
+
+  const { data: activeCampaigns } = await query;
 
   if (!activeCampaigns || activeCampaigns.length === 0) {
     return { success: true, message: 'No active campaigns.' };
