@@ -63,6 +63,13 @@ export async function DELETE(req: Request) {
     const all = searchParams.get('all');
 
     if (all === 'true') {
+      // 1. Delete all replies
+      await supabase.from('replies').delete().neq('id', -1);
+      
+      // 2. Delete all emails
+      await supabase.from('emails').delete().neq('id', -1);
+
+      // 3. Delete all contacts
       const { error } = await supabase
         .from('contacts')
         .delete()
@@ -74,6 +81,13 @@ export async function DELETE(req: Request) {
 
     if (!id) return NextResponse.json({ error: 'ID is required' }, { status: 400 });
 
+    // 1. Delete replies for this contact
+    await supabase.from('replies').delete().eq('contact_id', id);
+    
+    // 2. Delete emails for this contact
+    await supabase.from('emails').delete().eq('contact_id', id);
+
+    // 3. Delete the contact
     const { error } = await supabase
       .from('contacts')
       .delete()
