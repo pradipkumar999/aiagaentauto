@@ -25,7 +25,6 @@ export async function POST(req: Request) {
     const { error } = await supabase
       .from('settings')
       .update({
-        gemini_api_key: data.claude_api_key,
         gemini_model: data.claude_model,
         daily_email_limit: data.daily_email_limit,
         default_tone: data.default_tone

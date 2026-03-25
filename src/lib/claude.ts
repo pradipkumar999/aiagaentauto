@@ -1,22 +1,48 @@
-import Anthropic from "@anthropic-ai/sdk";
 import supabase from "./db";
 
-export async function generateEmail(target: string, productName: string, link: string, tone: string) {
+const VPS_API_URL = "http://62.171.155.215/api/generate";
+
+async function callVPS(model: string, prompt: string): Promise<string> {
+  const response = await fetch(VPS_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      prompt,
+      stream: false,
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`VPS API error ${response.status}: ${text}`);
+  }
+
+  const data = await response.json();
+  // Ollama /api/generate returns { response: "..." }
+  return (data.response as string) || "";
+}
+
+async function getVPSSettings() {
   if (!supabase) throw new Error("Supabase client not initialized.");
 
   const { data: settings } = await supabase
-    .from('settings')
-    .select('gemini_api_key, gemini_model')
-    .eq('id', 1)
+    .from("settings")
+    .select("gemini_model")
+    .eq("id", 1)
     .single();
-  
-  if (!settings?.gemini_api_key) throw new Error("Claude API Key not set in settings.");
 
-  const anthropic = new Anthropic({
-    apiKey: settings.gemini_api_key,
-  });
+  const model = settings?.gemini_model || "phi3:mini";
+  return { model };
+}
 
-  const modelName = settings.gemini_model || "claude-3-5-sonnet-20240620";
+export async function generateEmail(
+  target: string,
+  productName: string,
+  link: string,
+  tone: string
+) {
+  const { model } = await getVPSSettings();
 
   const prompt = `
     Write a short outreach email.
@@ -28,44 +54,25 @@ export async function generateEmail(target: string, productName: string, link: s
     Goal: Recommend useful book.
     Keep email under 120 words.
     Add CTA to check the link.
-    Return ONLY the JSON in the following format:
+    Return ONLY the JSON in the following format with no extra text:
     {
       "subject": "...",
       "content": "..."
     }
   `;
 
-  const response = await anthropic.messages.create({
-    model: modelName,
-    max_tokens: 1024,
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  const text = response.content[0].type === 'text' ? response.content[0].text : '';
-  
-  // Basic cleanup to extract JSON if needed
+  const text = await callVPS(model, prompt);
   const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("Failed to parse Claude response as JSON.");
-  
+  if (!jsonMatch) throw new Error("Failed to parse VPS response as JSON.");
   return JSON.parse(jsonMatch[0]);
 }
 
-export async function generateAutoReply(contactName: string, originalEmail: string, userReply: string) {
-  if (!supabase) throw new Error("Supabase client not initialized.");
-
-  const { data: settings } = await supabase
-    .from('settings')
-    .select('gemini_api_key, gemini_model')
-    .eq('id', 1)
-    .single();
-  
-  if (!settings?.gemini_api_key) throw new Error("Claude API Key not set in settings.");
-
-  const anthropic = new Anthropic({
-    apiKey: settings.gemini_api_key,
-  });
-
-  const modelName = settings.gemini_model || "claude-3-5-sonnet-20240620";
+export async function generateAutoReply(
+  contactName: string,
+  originalEmail: string,
+  userReply: string
+) {
+  const { model } = await getVPSSettings();
 
   const prompt = `
     You are an AI assistant for a business. A contact has replied to our outreach email.
@@ -77,34 +84,20 @@ export async function generateAutoReply(contactName: string, originalEmail: stri
 
     Goal: Answer their question or acknowledge their interest and encourage further engagement.
     Keep the response concise (under 100 words).
-    Return ONLY the response text.
+    Return ONLY the response text with no extra commentary.
   `;
 
-  const response = await anthropic.messages.create({
-    model: modelName,
-    max_tokens: 1024,
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  return (response.content[0].type === 'text' ? response.content[0].text : '').trim();
+  const text = await callVPS(model, prompt);
+  return text.trim();
 }
 
-export async function generateFollowUpEmail(contactName: string, originalSubject: string, productName: string, link: string) {
-  if (!supabase) throw new Error("Supabase client not initialized.");
-
-  const { data: settings } = await supabase
-    .from('settings')
-    .select('gemini_api_key, gemini_model')
-    .eq('id', 1)
-    .single();
-  
-  if (!settings?.gemini_api_key) throw new Error("Claude API Key not set.");
-
-  const anthropic = new Anthropic({
-    apiKey: settings.gemini_api_key,
-  });
-
-  const modelName = settings.gemini_model || "claude-3-5-sonnet-20240620";
+export async function generateFollowUpEmail(
+  contactName: string,
+  originalSubject: string,
+  productName: string,
+  link: string
+) {
+  const { model } = await getVPSSettings();
 
   const prompt = `
     Write a short follow-up email for a previous outreach.
@@ -116,20 +109,14 @@ export async function generateFollowUpEmail(contactName: string, originalSubject
     Goal: Remind them about the book/product we recommended. 
     Keep it very brief (under 80 words). 
     Ask if they had a chance to check the recommendation.
-    Return ONLY the JSON in this format:
+    Return ONLY the JSON in this format with no extra text:
     {
       "subject": "Re: ${originalSubject}",
       "content": "..."
     }
   `;
 
-  const response = await anthropic.messages.create({
-    model: modelName,
-    max_tokens: 1024,
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  const text = response.content[0].type === 'text' ? response.content[0].text : '';
+  const text = await callVPS(model, prompt);
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error("Failed to parse follow-up JSON.");
   return JSON.parse(jsonMatch[0]);

@@ -1,22 +1,35 @@
 import { NextResponse } from 'next/server';
 
-export async function POST(req: Request) {
-  try {
-    const { apiKey } = await req.json();
-    if (!apiKey) return NextResponse.json({ error: 'API Key is required' }, { status: 400 });
+const VPS_TAGS_URL = "http://62.171.155.215/api/tags";
 
-    // Since Anthropic doesn't have a simple public model list endpoint like Gemini, 
-    // we return the most popular models for selection.
-    const models = [
-      { name: 'claude-3-5-sonnet-20240620', displayName: 'Claude 3.5 Sonnet', description: 'Most intelligent model' },
-      { name: 'claude-3-opus-20240229', displayName: 'Claude 3 Opus', description: 'Powerful for complex tasks' },
-      { name: 'claude-3-haiku-20240307', displayName: 'Claude 3 Haiku', description: 'Fastest and most compact model' },
-      { name: 'claude-2.1', displayName: 'Claude 2.1', description: 'Updated Claude 2 model' }
-    ];
+export async function POST() {
+  try {
+    // Fetch available models from VPS Ollama instance
+    const res = await fetch(VPS_TAGS_URL);
+    
+    if (!res.ok) {
+      throw new Error(`VPS returned ${res.status}`);
+    }
+
+    const data = await res.json();
+    // Ollama /api/tags returns { models: [{ name, modified_at, size }] }
+    const models = (data.models || []).map((m: { name: string }) => ({
+      name: m.name,
+      displayName: m.name,
+      description: 'VPS hosted model'
+    }));
+
+    // Fallback if no models returned
+    if (models.length === 0) {
+      models.push({ name: 'llama3', displayName: 'llama3', description: 'Default VPS model' });
+    }
 
     return NextResponse.json(models);
   } catch (error) {
-    console.error("Claude API Error:", error);
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+    console.error("VPS Model Fetch Error:", error);
+    // Return a default fallback model on error
+    return NextResponse.json([
+      { name: 'llama3', displayName: 'llama3', description: 'Default VPS model' }
+    ]);
   }
 }
